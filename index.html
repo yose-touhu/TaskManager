@@ -35,7 +35,6 @@
 
     .hidden { display: none !important; }
 
-    /* ログインバー */
     .auth-bar {
       display: flex;
       justify-content: space-between;
@@ -115,7 +114,7 @@
     button {
       font-weight: 900;
       font-size: 0.95rem;
-      padding: 10px 14px;
+      padding: 8px 12px;
       border: none;
       border-radius: 6px;
       cursor: pointer;
@@ -148,7 +147,13 @@
       color: var(--accent-color);
     }
 
-    /* 未配置タスクプール（タイムライン用） */
+    .task-sub-info {
+      font-size: 0.8rem;
+      color: var(--text-sub);
+      margin-top: 4px;
+      font-weight: normal;
+    }
+
     .unassigned-pool {
       display: flex;
       flex-wrap: wrap;
@@ -171,7 +176,6 @@
       touch-action: none;
     }
 
-    /* 24時間タイムライン */
     .timeline-wrapper {
       position: relative;
       background-color: #1a1a1a;
@@ -180,10 +184,7 @@
       overflow: hidden;
     }
 
-    .timeline-grid {
-      display: flex;
-      flex-direction: column;
-    }
+    .timeline-grid { display: flex; flex-direction: column; }
 
     .time-slot {
       height: var(--slot-height);
@@ -204,10 +205,7 @@
       flex-shrink: 0;
     }
 
-    .time-lane {
-      flex: 1;
-      position: relative;
-    }
+    .time-lane { flex: 1; position: relative; }
 
     .draggable-task {
       position: absolute;
@@ -228,16 +226,8 @@
       justify-content: space-between;
     }
 
-    .draggable-task:active {
-      cursor: grabbing;
-      opacity: 0.85;
-      z-index: 20;
-    }
-
-    .draggable-task.completed {
-      background-color: var(--accent-color);
-      color: #000000;
-    }
+    .draggable-task:active { cursor: grabbing; opacity: 0.85; z-index: 20; }
+    .draggable-task.completed { background-color: var(--accent-color); color: #000000; }
 
     .resize-handle {
       position: absolute;
@@ -258,10 +248,31 @@
       gap: 4px;
     }
 
-    .btn-group-mini button {
-      padding: 2px 6px;
-      font-size: 0.7rem;
+    .btn-group-mini button { padding: 2px 6px; font-size: 0.7rem; }
+
+    /* モーダルダイアログ */
+    .modal-overlay {
+      position: fixed;
+      top: 0; left: 0; width: 100vw; height: 100vh;
+      background: rgba(0,0,0,0.7);
+      display: flex; justify-content: center; align-items: center;
+      z-index: 1000;
     }
+
+    .modal-card {
+      background-color: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      width: 90%; max-width: 500px;
+      max-height: 85vh; overflow-y: auto;
+      padding: 16px; display: flex; flex-direction: column; gap: 12px;
+    }
+
+    .checklist-item {
+      display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
+    }
+
+    .checklist-item input[type="text"] { flex: 1; padding: 6px; }
   </style>
 </head>
 <body>
@@ -296,7 +307,7 @@
       <table>
         <thead>
           <tr>
-            <th>タスク名</th>
+            <th>タスク詳細</th>
             <th>予定(分)</th>
             <th>操作</th>
           </tr>
@@ -310,7 +321,7 @@
       <table>
         <thead>
           <tr>
-            <th>タスク名</th>
+            <th>タスク詳細</th>
             <th>経過時間</th>
             <th>タイマー操作</th>
           </tr>
@@ -357,6 +368,39 @@
     </div>
   </div>
 
+  <!-- 編集モーダル（ポップアップ） -->
+  <div id="editModal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <h2 style="margin-bottom:0;">タスクの編集・詳細</h2>
+      
+      <div>
+        <label style="font-size:0.85rem; color:var(--text-sub);">タスク名</label>
+        <input type="text" id="modalName" style="width:100%;">
+      </div>
+
+      <div>
+        <label style="font-size:0.85rem; color:var(--text-sub);">予定時間（分）</label>
+        <input type="text" id="modalEst" style="width:100%;">
+      </div>
+
+      <div>
+        <label style="font-size:0.85rem; color:var(--text-sub);">メモ（URL、必要な道具など）</label>
+        <textarea id="modalMemo" placeholder="例: 参考URL: https://...\n準備物: ノート、資料"></textarea>
+      </div>
+
+      <div>
+        <label style="font-size:0.85rem; color:var(--text-sub);">工程チェックリスト</label>
+        <div id="modalChecklistContainer"></div>
+        <button class="btn-add" style="margin-top:4px; font-size:0.8rem;" onclick="addModalChecklistItem()">＋ 項目追加</button>
+      </div>
+
+      <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:8px;">
+        <button class="btn-del" onclick="closeEditModal()">キャンセル</button>
+        <button class="btn-add" onclick="saveModalChanges()">保存</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Firebase SDK ＆ 全ロジック -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
@@ -382,12 +426,12 @@
     let currentUser = null;
     let unsubscribeSnapshot = null;
 
-    // --- データ保持変数（グローバル変数として初期化） ---
     window.registeredTasks = JSON.parse(localStorage.getItem('tb_registered')) || [];
     window.activeTasks = JSON.parse(localStorage.getItem('tb_active')) || [];
     window.completedTasks = JSON.parse(localStorage.getItem('tb_completed')) || [];
     window.timelineTasks = JSON.parse(localStorage.getItem('tb_timeline')) || [];
     window.timerInterval = null;
+    let editingTaskId = null;
 
     const loginBtn = document.getElementById('login-btn');
     const logoutBtn = document.getElementById('logout-btn');
@@ -417,7 +461,6 @@
       }
     });
 
-    // --- データ保存機能（全体からアクセスできるようwindowにバインド） ---
     window.saveData = async function() {
       localStorage.setItem('tb_registered', JSON.stringify(window.registeredTasks));
       localStorage.setItem('tb_active', JSON.stringify(window.activeTasks));
@@ -470,7 +513,6 @@
       }
     }
 
-    /* --- アプリの全操作関数 --- */
     window.switchTab = function(tabId, btn) {
       document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
       document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
@@ -488,24 +530,101 @@
         const parts = line.split(/[,，]/);
         const name = parts[0].trim();
         const est = parts[1] ? parseInt(parts[1].trim(), 10) || 15 : 15;
-        window.registeredTasks.push({ id: Date.now() + Math.random(), name: name, est: est });
+        window.registeredTasks.push({ 
+          id: Date.now() + Math.random(), 
+          name: name, 
+          est: est,
+          memo: "",
+          checklist: []
+        });
       });
       document.getElementById('bulkInput').value = '';
       window.saveData();
       renderRegisteredTable();
     };
 
-    window.editRegistered = function(id) {
-      const task = window.registeredTasks.find(t => t.id === id);
+    /* --- 編集モーダル操作 --- */
+    window.openEditModal = function(id) {
+      editingTaskId = id;
+      const task = window.findTaskById(id);
       if (!task) return;
-      const newName = prompt('タスク名を入力:', task.name);
-      if (newName === null) return;
-      const newEst = prompt('予定時間（分）を入力:', task.est);
-      if (newEst === null) return;
-      task.name = newName.trim() || task.name;
-      task.est = parseInt(newEst, 10) || task.est;
+
+      document.getElementById('modalName').value = task.name || '';
+      document.getElementById('modalEst').value = task.est || task.durationMin || 15;
+      document.getElementById('modalMemo').value = task.memo || '';
+
+      const container = document.getElementById('modalChecklistContainer');
+      container.innerHTML = '';
+      (task.checklist || []).forEach(item => {
+        window.addModalChecklistItem(item.text, item.done);
+      });
+
+      document.getElementById('editModal').classList.remove('hidden');
+    };
+
+    window.closeEditModal = function() {
+      document.getElementById('editModal').classList.add('hidden');
+      editingTaskId = null;
+    };
+
+    window.addModalChecklistItem = function(text = '', done = false) {
+      const container = document.getElementById('modalChecklistContainer');
+      const div = document.createElement('div');
+      div.className = 'checklist-item';
+      div.innerHTML = `
+        <input type="checkbox" ${done ? 'checked' : ''}>
+        <input type="text" value="${escapeHtml(text)}" placeholder="工程を入力">
+        <button class="btn-del" onclick="this.parentElement.remove()" style="padding:4px 8px;">✕</button>
+      `;
+      container.appendChild(div);
+    };
+
+    window.saveModalChanges = function() {
+      if (!editingTaskId) return;
+      const task = window.findTaskById(editingTaskId);
+      if (!task) return;
+
+      task.name = document.getElementById('modalName').value.trim() || task.name;
+      const estVal = parseInt(document.getElementById('modalEst').value, 10) || 15;
+      if (task.est !== undefined) task.est = estVal;
+      if (task.durationMin !== undefined) task.durationMin = estVal;
+      task.memo = document.getElementById('modalMemo').value.trim();
+
+      const items = [];
+      document.querySelectorAll('#modalChecklistContainer .checklist-item').forEach(div => {
+        const chk = div.querySelector('input[type="checkbox"]').checked;
+        const txt = div.querySelector('input[type="text"]').value.trim();
+        if (txt) items.push({ text: txt, done: chk });
+      });
+      task.checklist = items;
+
+      // タイムライン連動
+      const tlTask = window.timelineTasks.find(t => t.id === editingTaskId);
+      if (tlTask) {
+        tlTask.name = task.name;
+        tlTask.memo = task.memo;
+        tlTask.checklist = task.checklist;
+        tlTask.durationMin = estVal;
+      }
+
       window.saveData();
-      renderRegisteredTable();
+      window.closeEditModal();
+      renderAll();
+    };
+
+    window.findTaskById = function(id) {
+      return window.registeredTasks.find(t => t.id === id) ||
+             window.activeTasks.find(t => t.id === id) ||
+             window.timelineTasks.find(t => t.id === id);
+    };
+
+    window.toggleChecklistItem = function(taskId, itemIndex) {
+      const task = window.findTaskById(taskId);
+      if (task && task.checklist && task.checklist[itemIndex]) {
+        task.checklist[itemIndex].done = !task.checklist[itemIndex].done;
+        window.saveData();
+        renderAll();
+      }
     };
 
     window.deleteRegistered = function(id) {
@@ -518,7 +637,37 @@
       const idx = window.registeredTasks.findIndex(t => t.id === id);
       if (idx === -1) return;
       const task = window.registeredTasks.splice(idx, 1)[0];
-      window.activeTasks.push({ id: task.id, name: task.name, est: task.est, elapsedSec: 0, isRunning: false, actualStart: null });
+      window.activeTasks.push({ 
+        id: task.id, 
+        name: task.name, 
+        est: task.est, 
+        memo: task.memo || "",
+        checklist: task.checklist || [],
+        elapsedSec: 0, 
+        isRunning: false, 
+        actualStart: null 
+      });
+      window.saveData();
+      renderRegisteredTable();
+      renderActiveTable();
+    };
+
+    /* ★追加：着手済みタスクを登録一覧に戻す★ */
+    window.returnToRegistered = function(id) {
+      const idx = window.activeTasks.findIndex(t => t.id === id);
+      if (idx === -1) return;
+      const task = window.activeTasks.splice(idx, 1)[0];
+      task.isRunning = false;
+      checkTimerState();
+
+      window.registeredTasks.push({
+        id: task.id,
+        name: task.name,
+        est: task.est,
+        memo: task.memo || "",
+        checklist: task.checklist || []
+      });
+
       window.saveData();
       renderRegisteredTable();
       renderActiveTable();
@@ -571,7 +720,7 @@
         existingTL.isCompleted = true;
         existingTL.durationMin = durationMins;
       } else {
-        window.timelineTasks.push({ id: task.id, name: task.name, startMin: startMinutes, durationMin: durationMins, isCompleted: true });
+        window.timelineTasks.push({ id: task.id, name: task.name, startMin: startMinutes, durationMin: durationMins, isCompleted: true, memo: task.memo, checklist: task.checklist });
       }
 
       window.saveData();
@@ -611,7 +760,15 @@
     window.assignTaskToTimeline = function(task) {
       const now = new Date();
       const currentMins = now.getHours() * 60 + Math.floor(now.getMinutes() / 15) * 15;
-      window.timelineTasks.push({ id: task.id, name: task.name, startMin: currentMins, durationMin: task.est || 30, isCompleted: false });
+      window.timelineTasks.push({ 
+        id: task.id, 
+        name: task.name, 
+        startMin: currentMins, 
+        durationMin: task.est || 30, 
+        isCompleted: false,
+        memo: task.memo || "",
+        checklist: task.checklist || []
+      });
       window.saveData();
       renderTimeline();
     };
@@ -621,20 +778,15 @@
       if (!name) return;
       const now = new Date();
       const currentMins = now.getHours() * 60 + Math.floor(now.getMinutes() / 15) * 15;
-      window.timelineTasks.push({ id: Date.now(), name: name, startMin: currentMins, durationMin: 30, isCompleted: false });
-      window.saveData();
-      renderTimeline();
-    };
-
-    window.editTimelineTask = function(id) {
-      const task = window.timelineTasks.find(t => t.id === id);
-      if (!task) return;
-      const newName = prompt('タスク名を入力:', task.name);
-      if (newName === null) return;
-      const newDur = prompt('所要時間（分）を入力:', task.durationMin);
-      if (newDur === null) return;
-      task.name = newName.trim() || task.name;
-      task.durationMin = Math.max(15, parseInt(newDur, 10) || task.durationMin);
+      window.timelineTasks.push({ 
+        id: Date.now(), 
+        name: name, 
+        startMin: currentMins, 
+        durationMin: 30, 
+        isCompleted: false,
+        memo: "",
+        checklist: []
+      });
       window.saveData();
       renderTimeline();
     };
@@ -645,17 +797,42 @@
       renderTimeline();
     };
 
+    function generateSubInfoHtml(task) {
+      let html = '';
+      if (task.memo) {
+        const formattedMemo = escapeHtml(task.memo).replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" style="color:var(--accent-color);">${1}</a>');
+        html += `<div class="task-sub-info">📝 ${formattedMemo}</div>`;
+      }
+      if (task.checklist && task.checklist.length > 0) {
+        const doneCount = task.checklist.filter(c => c.done).length;
+        html += `<div class="task-sub-info">☑ チェックリスト (${doneCount}/${task.checklist.length})</div>`;
+        html += `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:2px;">`;
+        task.checklist.forEach((item, idx) => {
+          html += `
+            <label style="font-size:0.75rem; color:${item.done ? 'var(--text-sub)' : '#fff'}; user-select:none; cursor:pointer; text-decoration:${item.done ? 'line-through' : 'none'}">
+              <input type="checkbox" ${item.done ? 'checked' : ''} onchange="toggleChecklistItem(${task.id}, ${idx})"> ${escapeHtml(item.text)}
+            </label>
+          `;
+        });
+        html += `</div>`;
+      }
+      return html;
+    }
+
     function renderRegisteredTable() {
       const tbody = document.getElementById('registeredTableBody');
       tbody.innerHTML = '';
       window.registeredTasks.forEach(t => {
         const tr = document.createElement('tr');
         tr.innerHTML = `
-          <td>${escapeHtml(t.name)}</td>
+          <td>
+            <div>${escapeHtml(t.name)}</div>
+            ${generateSubInfoHtml(t)}
+          </td>
           <td>${t.est}分</td>
           <td>
             <button class="btn-add" onclick="startTaskFromList(${t.id})">着手</button>
-            <button class="btn-edit" onclick="editRegistered(${t.id})">編集</button>
+            <button class="btn-edit" onclick="openEditModal(${t.id})">詳細/編集</button>
             <button class="btn-del" onclick="deleteRegistered(${t.id})">削除</button>
           </td>
         `;
@@ -673,13 +850,18 @@
         const mins = String(Math.floor((t.elapsedSec % 3600) / 60)).padStart(2, '0');
         const secs = String(t.elapsedSec % 60).padStart(2, '0');
         tr.innerHTML = `
-          <td>${escapeHtml(t.name)}</td>
+          <td>
+            <div>${escapeHtml(t.name)}</div>
+            ${generateSubInfoHtml(t)}
+          </td>
           <td class="timer-text">${hrs}:${mins}:${secs}</td>
           <td>
             <button class="${t.isRunning ? 'btn-stop' : 'btn-start'}" onclick="toggleTimer(${t.id})">
               ${t.isRunning ? '一時停止' : 'タイマースタート'}
             </button>
             <button class="btn-add" onclick="completeTask(${t.id})">完了</button>
+            <button class="btn-edit" onclick="openEditModal(${t.id})">詳細/編集</button>
+            <button class="btn-del" onclick="returnToRegistered(${t.id})">一覧に戻す</button>
           </td>
         `;
         tbody.appendChild(tr);
@@ -747,8 +929,14 @@
         const startH = String(Math.floor(task.startMin / 60)).padStart(2, '0');
         const startM = String(task.startMin % 60).padStart(2, '0');
 
+        let checkInfo = '';
+        if (task.checklist && task.checklist.length > 0) {
+          const done = task.checklist.filter(c => c.done).length;
+          checkInfo = ` (${done}/${task.checklist.length})`;
+        }
+
         el.innerHTML = `
-          <div><span>[${startH}:${startM}] ${escapeHtml(task.name)} (${task.durationMin}分)</span></div>
+          <div><span>[${startH}:${startM}] ${escapeHtml(task.name)}${checkInfo} (${task.durationMin}分)</span></div>
           <div class="resize-handle"></div>
         `;
 
@@ -757,7 +945,7 @@
         const editBtn = document.createElement('button');
         editBtn.className = 'btn-edit';
         editBtn.textContent = '✎';
-        editBtn.onclick = (e) => { e.stopPropagation(); window.editTimelineTask(task.id); };
+        editBtn.onclick = (e) => { e.stopPropagation(); window.openEditModal(task.id); };
         const delBtn = document.createElement('button');
         delBtn.className = 'btn-del';
         delBtn.textContent = '✕';
@@ -838,10 +1026,10 @@
     }
 
     function escapeHtml(str) {
+      if (!str) return '';
       return str.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
     }
 
-    // 初期化表示
     renderAll();
   </script>
 </body>
