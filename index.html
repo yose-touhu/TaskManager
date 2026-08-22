@@ -483,26 +483,33 @@
     };
 
     function setupFirebaseSync() {
-      if (!currentUser) return;
-      const docRef = doc(db, "users", currentUser.uid);
+  if (!currentUser) return;
+  const docRef = doc(db, "users", currentUser.uid);
 
-      unsubscribeSnapshot = onSnapshot(docRef, (docSnap) => {
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          window.registeredTasks = data.registered || [];
-          window.activeTasks = data.active || [];
-          window.completedTasks = data.completed || [];
-          window.timelineTasks = data.timeline || [];
+  // Firestoreからリアルタイムで最新データを受信
+  unsubscribeSnapshot = onSnapshot(docRef, (docSnap) => {
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      
+      // クラウド側のデータで上書き
+      window.registeredTasks = data.registered || [];
+      window.activeTasks = data.active || [];
+      window.completedTasks = data.completed || [];
+      window.timelineTasks = data.timeline || [];
 
-          localStorage.setItem('tb_registered', JSON.stringify(window.registeredTasks));
-          localStorage.setItem('tb_active', JSON.stringify(window.activeTasks));
-          localStorage.setItem('tb_completed', JSON.stringify(window.completedTasks));
-          localStorage.setItem('tb_timeline', JSON.stringify(window.timelineTasks));
+      // ローカルストレージも更新
+      localStorage.setItem('tb_registered', JSON.stringify(window.registeredTasks));
+      localStorage.setItem('tb_active', JSON.stringify(window.activeTasks));
+      localStorage.setItem('tb_completed', JSON.stringify(window.completedTasks));
+      localStorage.setItem('tb_timeline', JSON.stringify(window.timelineTasks));
 
-          renderAll();
-        }
-      });
+      renderAll();
     }
+  }, (error) => {
+    console.error("Firestore同期エラー:", error);
+    alert("同期に失敗しました: " + error.message);
+  });
+}
 
     function renderAll() {
       renderRegisteredTable();
