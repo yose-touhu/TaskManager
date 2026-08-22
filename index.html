@@ -283,8 +283,6 @@
 
   <!-- 【タブ1】タスク管理・実行画面 -->
   <div id="taskTab" class="tab-content active">
-    
-    <!-- 1. タスクの一括登録 -->
     <div class="card">
       <h2>1. タスク一括登録（1行につき1タスク）</h2>
       <div class="input-group">
@@ -293,7 +291,6 @@
       </div>
     </div>
 
-    <!-- 2. 登録済みタスク一覧（着手待ち） -->
     <div class="card">
       <h2>2. 登録済みタスク（着手待ち）</h2>
       <table>
@@ -308,7 +305,6 @@
       </table>
     </div>
 
-    <!-- 3. 実行中テーブル ＆ タイマー -->
     <div class="card" style="border: 2px solid var(--accent-color);">
       <h2>3. 実行中テーブル（タイマー計測）</h2>
       <table>
@@ -323,7 +319,6 @@
       </table>
     </div>
 
-    <!-- 4. 完了履歴テーブル -->
     <div class="card">
       <h2>4. 完了履歴</h2>
       <div style="margin-bottom: 8px;">
@@ -342,7 +337,6 @@
         <tbody id="historyTableBody"></tbody>
       </table>
     </div>
-
   </div>
 
   <!-- 【タブ2】タイムライン画面 -->
@@ -363,19 +357,12 @@
     </div>
   </div>
 
-  <!-- Firebase SDK (Version 10 CDN) -->
+  <!-- Firebase SDK ＆ 全ロジック -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
     import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-    import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+    import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-    /* 
-    =================================================================
-    ★☆★ 変更箇所【1】★☆★
-    Firebaseコンソールの「プロジェクトの設定」＞「全般」タブの一番下にある
-    firebaseConfig の中身をコピーして、以下のカッコ内を置き換えてください。
-    =================================================================
-    */
     const firebaseConfig = {
       apiKey: "AIzaSyBeBKeUH6NCRux5djZh5-E5GG4AV2yzZVM",
       authDomain: "taskmanager-36d84.firebaseapp.com",
@@ -385,16 +372,8 @@
       appId: "1:445804545228:web:b6f0259243e5acd9296e69"
     };
 
-    /* 
-    =================================================================
-    ★☆★ 変更箇所【2】★☆★
-    ログイン許可を出すご自身のGoogleメールアドレスに書き換えてください。
-    （例: "yamada@gmail.com"）
-    =================================================================
-    */
     const ALLOWED_EMAIL = "owlbird124@gmail.com";
 
-    // Firebase 初期化
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db = getFirestore(app);
@@ -403,14 +382,13 @@
     let currentUser = null;
     let unsubscribeSnapshot = null;
 
-    // --- データ保持変数 ---
+    // --- データ保持変数（グローバル変数として初期化） ---
     window.registeredTasks = JSON.parse(localStorage.getItem('tb_registered')) || [];
     window.activeTasks = JSON.parse(localStorage.getItem('tb_active')) || [];
     window.completedTasks = JSON.parse(localStorage.getItem('tb_completed')) || [];
     window.timelineTasks = JSON.parse(localStorage.getItem('tb_timeline')) || [];
     window.timerInterval = null;
 
-    // --- 認証状態の監視 ---
     const loginBtn = document.getElementById('login-btn');
     const logoutBtn = document.getElementById('logout-btn');
     const statusText = document.getElementById('auth-status-text');
@@ -425,8 +403,6 @@
           statusText.textContent = `同期中: ${user.email}`;
           loginBtn.classList.add('hidden');
           logoutBtn.classList.remove('hidden');
-
-          // Firebaseのリアルタイム同期を設定
           setupFirebaseSync();
         } else {
           alert("許可されていないアカウントです。");
@@ -441,15 +417,13 @@
       }
     });
 
-    // --- Firebase連携データ保存機能 ---
+    // --- データ保存機能（全体からアクセスできるようwindowにバインド） ---
     window.saveData = async function() {
-      // 1. ローカルストレージに保存（オフライン・一時保存用）
       localStorage.setItem('tb_registered', JSON.stringify(window.registeredTasks));
       localStorage.setItem('tb_active', JSON.stringify(window.activeTasks));
       localStorage.setItem('tb_completed', JSON.stringify(window.completedTasks));
       localStorage.setItem('tb_timeline', JSON.stringify(window.timelineTasks));
 
-      // 2. Firebaseへクラウド送信
       if (currentUser) {
         try {
           await setDoc(doc(db, "users", currentUser.uid), {
@@ -469,7 +443,6 @@
       if (!currentUser) return;
       const docRef = doc(db, "users", currentUser.uid);
 
-      // クラウド側のデータ変更を監視して自動反映（他端末との同時期同期）
       unsubscribeSnapshot = onSnapshot(docRef, (docSnap) => {
         if (docSnap.exists()) {
           const data = docSnap.data();
@@ -478,7 +451,6 @@
           window.completedTasks = data.completed || [];
           window.timelineTasks = data.timeline || [];
 
-          // ローカルも更新
           localStorage.setItem('tb_registered', JSON.stringify(window.registeredTasks));
           localStorage.setItem('tb_active', JSON.stringify(window.activeTasks));
           localStorage.setItem('tb_completed', JSON.stringify(window.completedTasks));
@@ -490,188 +462,136 @@
     }
 
     function renderAll() {
-      if (typeof window.renderRegisteredTable === 'function') window.renderRegisteredTable();
-      if (typeof window.renderActiveTable === 'function') window.renderActiveTable();
-      if (typeof window.renderHistoryTable === 'function') window.renderHistoryTable();
-      if (typeof window.renderTimeline === 'function' && document.getElementById('timelineTab').classList.contains('active')) {
-        window.renderTimeline();
-      }
-    }
-  </script>
-
-  <script>
-    /* --- タブ切り替え --- */
-    function switchTab(tabId, btn) {
-      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-      document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-      
-      document.getElementById(tabId).classList.add('active');
-      btn.classList.add('active');
-
-      if (tabId === 'timelineTab') {
+      renderRegisteredTable();
+      renderActiveTable();
+      renderHistoryTable();
+      if (document.getElementById('timelineTab').classList.contains('active')) {
         renderTimeline();
       }
     }
 
-    /* --- 1. タスク登録・編集機能 --- */
-    function addBulkTasks() {
+    /* --- アプリの全操作関数 --- */
+    window.switchTab = function(tabId, btn) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+      document.getElementById(tabId).classList.add('active');
+      btn.classList.add('active');
+      if (tabId === 'timelineTab') renderTimeline();
+    };
+
+    window.addBulkTasks = function() {
       const text = document.getElementById('bulkInput').value.trim();
       if (!text) return;
-
       const lines = text.split('\n');
       lines.forEach(line => {
         if (!line.trim()) return;
         const parts = line.split(/[,，]/);
         const name = parts[0].trim();
         const est = parts[1] ? parseInt(parts[1].trim(), 10) || 15 : 15;
-
-        registeredTasks.push({
-          id: Date.now() + Math.random(),
-          name: name,
-          est: est
-        });
+        window.registeredTasks.push({ id: Date.now() + Math.random(), name: name, est: est });
       });
-
       document.getElementById('bulkInput').value = '';
-      saveData();
+      window.saveData();
       renderRegisteredTable();
-    }
+    };
 
-    function editRegistered(id) {
-      const task = registeredTasks.find(t => t.id === id);
+    window.editRegistered = function(id) {
+      const task = window.registeredTasks.find(t => t.id === id);
       if (!task) return;
-
       const newName = prompt('タスク名を入力:', task.name);
       if (newName === null) return;
       const newEst = prompt('予定時間（分）を入力:', task.est);
       if (newEst === null) return;
-
       task.name = newName.trim() || task.name;
       task.est = parseInt(newEst, 10) || task.est;
-
-      saveData();
+      window.saveData();
       renderRegisteredTable();
-    }
+    };
 
-    function editTimelineTask(id) {
-      const task = timelineTasks.find(t => t.id === id);
-      if (!task) return;
+    window.deleteRegistered = function(id) {
+      window.registeredTasks = window.registeredTasks.filter(t => t.id !== id);
+      window.saveData();
+      renderRegisteredTable();
+    };
 
-      const newName = prompt('タスク名を入力:', task.name);
-      if (newName === null) return;
-      const newDur = prompt('所要時間（分）を入力:', task.durationMin);
-      if (newDur === null) return;
-
-      task.name = newName.trim() || task.name;
-      task.durationMin = Math.max(15, parseInt(newDur, 10) || task.durationMin);
-
-      saveData();
-      renderTimeline();
-    }
-
-    /* --- 2. タイマー・実行中管理 --- */
-    function startTaskFromList(id) {
-      const idx = registeredTasks.findIndex(t => t.id === id);
+    window.startTaskFromList = function(id) {
+      const idx = window.registeredTasks.findIndex(t => t.id === id);
       if (idx === -1) return;
-
-      const task = registeredTasks.splice(idx, 1)[0];
-      activeTasks.push({
-        id: task.id,
-        name: task.name,
-        est: task.est,
-        elapsedSec: 0,
-        isRunning: false,
-        actualStart: null
-      });
-
-      saveData();
+      const task = window.registeredTasks.splice(idx, 1)[0];
+      window.activeTasks.push({ id: task.id, name: task.name, est: task.est, elapsedSec: 0, isRunning: false, actualStart: null });
+      window.saveData();
       renderRegisteredTable();
       renderActiveTable();
-    }
+    };
 
-    function toggleTimer(id) {
-      const task = activeTasks.find(t => t.id === id);
+    window.toggleTimer = function(id) {
+      const task = window.activeTasks.find(t => t.id === id);
       if (!task) return;
-
       if (task.isRunning) {
         task.isRunning = false;
       } else {
-        activeTasks.forEach(t => t.isRunning = false);
+        window.activeTasks.forEach(t => t.isRunning = false);
         task.isRunning = true;
-        if (!task.actualStart) {
-          task.actualStart = new Date().toISOString();
-        }
+        if (!task.actualStart) task.actualStart = new Date().toISOString();
       }
-
       checkTimerState();
-      saveData();
+      window.saveData();
       renderActiveTable();
-    }
+    };
 
     function checkTimerState() {
-      const anyRunning = activeTasks.some(t => t.isRunning);
-      if (anyRunning && !timerInterval) {
-        timerInterval = setInterval(() => {
-          activeTasks.forEach(t => {
-            if (t.isRunning) t.elapsedSec++;
-          });
+      const anyRunning = window.activeTasks.some(t => t.isRunning);
+      if (anyRunning && !window.timerInterval) {
+        window.timerInterval = setInterval(() => {
+          window.activeTasks.forEach(t => { if (t.isRunning) t.elapsedSec++; });
           renderActiveTable();
         }, 1000);
-      } else if (!anyRunning && timerInterval) {
-        clearInterval(timerInterval);
-        timerInterval = null;
+      } else if (!anyRunning && window.timerInterval) {
+        clearInterval(window.timerInterval);
+        window.timerInterval = null;
       }
     }
 
-    function completeTask(id) {
-      const idx = activeTasks.findIndex(t => t.id === id);
+    window.completeTask = function(id) {
+      const idx = window.activeTasks.findIndex(t => t.id === id);
       if (idx === -1) return;
-
-      const task = activeTasks.splice(idx, 1)[0];
+      const task = window.activeTasks.splice(idx, 1)[0];
       task.isRunning = false;
       checkTimerState();
 
       const endTime = new Date();
       const startTime = task.actualStart ? new Date(task.actualStart) : endTime;
-
       const durationMins = Math.max(1, Math.round(task.elapsedSec / 60));
       const startMinutes = startTime.getHours() * 60 + startTime.getMinutes();
 
-      completedTasks.push({
-        id: task.id,
-        name: task.name,
-        start: startTime.toISOString(),
-        end: endTime.toISOString(),
-        durationSec: task.elapsedSec
-      });
+      window.completedTasks.push({ id: task.id, name: task.name, start: startTime.toISOString(), end: endTime.toISOString(), durationSec: task.elapsedSec });
 
-      const existingTL = timelineTasks.find(t => t.id === task.id);
+      const existingTL = window.timelineTasks.find(t => t.id === task.id);
       if (existingTL) {
         existingTL.isCompleted = true;
         existingTL.durationMin = durationMins;
       } else {
-        timelineTasks.push({
-          id: task.id,
-          name: task.name,
-          startMin: startMinutes,
-          durationMin: durationMins,
-          isCompleted: true
-        });
+        window.timelineTasks.push({ id: task.id, name: task.name, startMin: startMinutes, durationMin: durationMins, isCompleted: true });
       }
 
-      saveData();
+      window.saveData();
       renderActiveTable();
       renderHistoryTable();
-    }
+    };
 
-    /* --- 完了済みタスクのテキストファイル保存 --- */
-    function downloadCompletedTasks() {
-      if (!completedTasks || completedTasks.length === 0) {
+    window.deleteHistory = function(id) {
+      window.completedTasks = window.completedTasks.filter(t => t.id !== id);
+      window.timelineTasks = window.timelineTasks.filter(t => t.id !== id);
+      window.saveData();
+      renderHistoryTable();
+    };
+
+    window.downloadCompletedTasks = function() {
+      if (!window.completedTasks || window.completedTasks.length === 0) {
         alert("完了済みのタスク履歴がありません。");
         return;
       }
-
-      const lines = completedTasks.map(t => {
+      const lines = window.completedTasks.map(t => {
         const startObj = new Date(t.start);
         const endObj = new Date(t.end);
         const startStr = startObj.toTimeString().substring(0, 5);
@@ -679,7 +599,6 @@
         const durMins = Math.round(t.durationSec / 60);
         return `[${startStr} - ${endStr}] ${t.name} (${durMins}分)`;
       });
-
       const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -687,68 +606,49 @@
       a.download = `completed_tasks_${new Date().toISOString().slice(0,10)}.txt`;
       a.click();
       URL.revokeObjectURL(url);
-    }
+    };
 
-    /* --- 3. タイムライン機能 ＆ 未配置タスクの配置 --- */
-    function assignTaskToTimeline(task) {
+    window.assignTaskToTimeline = function(task) {
       const now = new Date();
       const currentMins = now.getHours() * 60 + Math.floor(now.getMinutes() / 15) * 15;
-
-      timelineTasks.push({
-        id: task.id,
-        name: task.name,
-        startMin: currentMins,
-        durationMin: task.est || 30,
-        isCompleted: false
-      });
-
-      saveData();
+      window.timelineTasks.push({ id: task.id, name: task.name, startMin: currentMins, durationMin: task.est || 30, isCompleted: false });
+      window.saveData();
       renderTimeline();
-    }
+    };
 
-    function addQuickTimelineTask() {
+    window.addQuickTimelineTask = function() {
       const name = prompt('タスク名を入力してください:', '新規タスク');
       if (!name) return;
-
       const now = new Date();
       const currentMins = now.getHours() * 60 + Math.floor(now.getMinutes() / 15) * 15;
-
-      timelineTasks.push({
-        id: Date.now(),
-        name: name,
-        startMin: currentMins,
-        durationMin: 30,
-        isCompleted: false
-      });
-
-      saveData();
+      window.timelineTasks.push({ id: Date.now(), name: name, startMin: currentMins, durationMin: 30, isCompleted: false });
+      window.saveData();
       renderTimeline();
-    }
+    };
 
-    function deleteRegistered(id) {
-      registeredTasks = registeredTasks.filter(t => t.id !== id);
-      saveData();
-      renderRegisteredTable();
-    }
-
-    function deleteHistory(id) {
-      completedTasks = completedTasks.filter(t => t.id !== id);
-      timelineTasks = timelineTasks.filter(t => t.id !== id);
-      saveData();
-      renderHistoryTable();
-    }
-
-    function deleteTimelineTask(id) {
-      timelineTasks = timelineTasks.filter(t => t.id !== id);
-      saveData();
+    window.editTimelineTask = function(id) {
+      const task = window.timelineTasks.find(t => t.id === id);
+      if (!task) return;
+      const newName = prompt('タスク名を入力:', task.name);
+      if (newName === null) return;
+      const newDur = prompt('所要時間（分）を入力:', task.durationMin);
+      if (newDur === null) return;
+      task.name = newName.trim() || task.name;
+      task.durationMin = Math.max(15, parseInt(newDur, 10) || task.durationMin);
+      window.saveData();
       renderTimeline();
-    }
+    };
 
-    /* --- 4. レンダリング処理 --- */
+    window.deleteTimelineTask = function(id) {
+      window.timelineTasks = window.timelineTasks.filter(t => t.id !== id);
+      window.saveData();
+      renderTimeline();
+    };
+
     function renderRegisteredTable() {
       const tbody = document.getElementById('registeredTableBody');
       tbody.innerHTML = '';
-      registeredTasks.forEach(t => {
+      window.registeredTasks.forEach(t => {
         const tr = document.createElement('tr');
         tr.innerHTML = `
           <td>${escapeHtml(t.name)}</td>
@@ -766,14 +666,12 @@
     function renderActiveTable() {
       const tbody = document.getElementById('activeTableBody');
       tbody.innerHTML = '';
-      activeTasks.forEach(t => {
+      window.activeTasks.forEach(t => {
         const tr = document.createElement('tr');
         if (t.isRunning) tr.style.backgroundColor = 'var(--active-bg)';
-
         const hrs = String(Math.floor(t.elapsedSec / 3600)).padStart(2, '0');
         const mins = String(Math.floor((t.elapsedSec % 3600) / 60)).padStart(2, '0');
         const secs = String(t.elapsedSec % 60).padStart(2, '0');
-
         tr.innerHTML = `
           <td>${escapeHtml(t.name)}</td>
           <td class="timer-text">${hrs}:${mins}:${secs}</td>
@@ -791,14 +689,13 @@
     function renderHistoryTable() {
       const tbody = document.getElementById('historyTableBody');
       tbody.innerHTML = '';
-      completedTasks.forEach(t => {
+      window.completedTasks.forEach(t => {
         const tr = document.createElement('tr');
         const startObj = new Date(t.start);
         const endObj = new Date(t.end);
         const startStr = startObj.toTimeString().substring(0, 5);
         const endStr = endObj.toTimeString().substring(0, 5);
         const durMins = Math.round(t.durationSec / 60);
-
         tr.innerHTML = `
           <td>${escapeHtml(t.name)}</td>
           <td>${startStr}</td>
@@ -813,9 +710,7 @@
     function renderTimeline() {
       const pool = document.getElementById('unassignedPool');
       pool.innerHTML = '';
-      
-      const unassigned = registeredTasks.filter(rt => !timelineTasks.some(tt => tt.id === rt.id));
-      
+      const unassigned = window.registeredTasks.filter(rt => !window.timelineTasks.some(tt => tt.id === rt.id));
       if (unassigned.length === 0) {
         pool.innerHTML = '<span style="color:var(--text-sub); font-size:0.85rem;">未配置の登録タスクはありません</span>';
       } else {
@@ -823,75 +718,54 @@
           const item = document.createElement('div');
           item.className = 'pool-item';
           item.textContent = `＋ ${task.name} (${task.est}分)`;
-          item.onclick = () => assignTaskToTimeline(task);
+          item.onclick = () => window.assignTaskToTimeline(task);
           pool.appendChild(item);
         });
       }
 
       const grid = document.getElementById('timelineGrid');
       grid.innerHTML = '';
-
       for (let hour = 0; hour < 24; hour++) {
         const slot = document.createElement('div');
         slot.className = 'time-slot';
-
         const label = document.createElement('div');
         label.className = 'time-label';
         label.textContent = `${String(hour).padStart(2, '0')}:00`;
-
         const lane = document.createElement('div');
         lane.className = 'time-lane';
-
         slot.appendChild(label);
         slot.appendChild(lane);
         grid.appendChild(slot);
       }
 
       const wrapper = document.getElementById('timelineWrapper');
-      
-      timelineTasks.forEach(task => {
+      window.timelineTasks.forEach(task => {
         const el = document.createElement('div');
         el.className = `draggable-task ${task.isCompleted ? 'completed' : ''}`;
-        
-        const topPx = task.startMin;
-        const heightPx = Math.max(20, task.durationMin);
-
-        el.style.top = `${topPx}px`;
-        el.style.height = `${heightPx}px`;
-
+        el.style.top = `${task.startMin}px`;
+        el.style.height = `${Math.max(20, task.durationMin)}px`;
         const startH = String(Math.floor(task.startMin / 60)).padStart(2, '0');
         const startM = String(task.startMin % 60).padStart(2, '0');
 
         el.innerHTML = `
-          <div>
-            <span>[${startH}:${startM}] ${escapeHtml(task.name)} (${task.durationMin}分)</span>
-          </div>
+          <div><span>[${startH}:${startM}] ${escapeHtml(task.name)} (${task.durationMin}分)</span></div>
           <div class="resize-handle"></div>
         `;
 
         const btnGroup = document.createElement('div');
         btnGroup.className = 'btn-group-mini';
-
         const editBtn = document.createElement('button');
         editBtn.className = 'btn-edit';
         editBtn.textContent = '✎';
-        editBtn.onclick = (e) => {
-          e.stopPropagation();
-          editTimelineTask(task.id);
-        };
-
+        editBtn.onclick = (e) => { e.stopPropagation(); window.editTimelineTask(task.id); };
         const delBtn = document.createElement('button');
         delBtn.className = 'btn-del';
         delBtn.textContent = '✕';
-        delBtn.onclick = (e) => {
-          e.stopPropagation();
-          deleteTimelineTask(task.id);
-        };
+        delBtn.onclick = (e) => { e.stopPropagation(); window.deleteTimelineTask(task.id); };
 
         btnGroup.appendChild(editBtn);
         btnGroup.appendChild(delBtn);
         el.appendChild(btnGroup);
-
         makeDraggableAndResizable(el, task);
         wrapper.appendChild(el);
       });
@@ -907,14 +781,11 @@
       const handleStart = (e) => {
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
         const target = e.target;
-
         if (target.classList.contains('resize-handle')) {
           isResizing = true;
         } else if (!target.closest('.btn-group-mini')) {
           isDragging = true;
-        } else {
-          return;
-        }
+        } else return;
 
         startY = clientY;
         initialTop = task.startMin;
@@ -929,7 +800,6 @@
       const handleMove = (e) => {
         if (!isDragging && !isResizing) return;
         if (e.cancelable) e.preventDefault();
-
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
         const deltaY = clientY - startY;
 
@@ -948,16 +818,14 @@
         const startH = String(Math.floor(task.startMin / 60)).padStart(2, '0');
         const startM = String(task.startMin % 60).padStart(2, '0');
         const textSpan = el.querySelector('span');
-        if (textSpan) {
-          textSpan.textContent = `[${startH}:${startM}] ${task.name} (${task.durationMin}分)`;
-        }
+        if (textSpan) textSpan.textContent = `[${startH}:${startM}] ${task.name} (${task.durationMin}分)`;
       };
 
       const handleEnd = () => {
         if (isDragging || isResizing) {
           isDragging = false;
           isResizing = false;
-          saveData();
+          window.saveData();
         }
         document.removeEventListener('mousemove', handleMove);
         document.removeEventListener('mouseup', handleEnd);
@@ -973,11 +841,8 @@
       return str.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
     }
 
-    renderRegisteredTable();
-    renderActiveTable();
-    renderHistoryTable();
-    checkTimerState();
+    // 初期化表示
+    renderAll();
   </script>
-
 </body>
 </html>
