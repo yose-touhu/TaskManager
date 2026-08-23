@@ -98,7 +98,7 @@
       gap: 8px;
     }
 
-    input[type="text"], textarea {
+    input[type="text"], select, textarea {
       background-color: #2c2c2c;
       border: 1px solid var(--border-color);
       color: var(--text-main);
@@ -250,7 +250,6 @@
 
     .btn-group-mini button { padding: 2px 6px; font-size: 0.7rem; }
 
-    /* モーダルダイアログ */
     .modal-overlay {
       position: fixed;
       top: 0; left: 0; width: 100vw; height: 100vh;
@@ -263,7 +262,7 @@
       background-color: var(--card-bg);
       border: 1px solid var(--border-color);
       border-radius: 10px;
-      width: 90%; max-width: 500px;
+      width: 90%; max-width: 550px;
       max-height: 85vh; overflow-y: auto;
       padding: 16px; display: flex; flex-direction: column; gap: 12px;
     }
@@ -273,6 +272,19 @@
     }
 
     .checklist-item input[type="text"] { flex: 1; padding: 6px; }
+
+    .history-log-text {
+      background-color: #111;
+      color: #00ff66;
+      font-family: monospace;
+      padding: 12px;
+      border-radius: 6px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      font-size: 0.9rem;
+      max-height: 300px;
+      overflow-y: auto;
+    }
   </style>
 </head>
 <body>
@@ -331,9 +343,10 @@
     </div>
 
     <div class="card">
-      <h2>4. 完了履歴</h2>
-      <div style="margin-bottom: 8px;">
-        <button class="btn-add" onclick="downloadCompletedTasks()">📄 完了済みタスクをテキスト保存</button>
+      <h2>4. 本日の完了履歴</h2>
+      <div style="margin-bottom: 8px; display:flex; gap:8px;">
+        <button class="btn-add" onclick="openHistoryModal()">📅 過去の記録ログを見る</button>
+        <button class="btn-edit" onclick="downloadCompletedTasks()">📄 テキストとして出力(文字化け対策済)</button>
       </div>
       <table>
         <thead>
@@ -368,7 +381,7 @@
     </div>
   </div>
 
-  <!-- 編集モーダル（ポップアップ） -->
+  <!-- 編集モーダル -->
   <div id="editModal" class="modal-overlay hidden">
     <div class="modal-card">
       <h2 style="margin-bottom:0;">タスクの編集・詳細</h2>
@@ -401,11 +414,35 @@
     </div>
   </div>
 
+  <!-- 過去ログ閲覧モーダル -->
+  <div id="historyModal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <h2>📅 日々の活動記録アーカイブ</h2>
+      
+      <div>
+        <label style="font-size:0.85rem; color:var(--text-sub);">閲覧したい日付を選択:</label>
+        <select id="historyDateSelect" style="width:100%; margin-top:4px;" onchange="loadHistoryLogByDate(this.value)">
+          <option value="">日付を選択してください</option>
+        </select>
+      </div>
+
+      <div>
+        <label style="font-size:0.85rem; color:var(--text-sub);">記録ログ（テキスト）:</label>
+        <div id="historyLogDisplay" class="history-log-text">日付を選択するとここにログが表示されます</div>
+      </div>
+
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
+        <button class="btn-edit" onclick="copyHistoryLog()">📋 ログをコピー</button>
+        <button class="btn-del" onclick="closeHistoryModal()">閉じる</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Firebase SDK ＆ 全ロジック -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
     import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-    import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+    import { getFirestore, doc, setDoc, getDoc, collection, getDocs, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyBeBKeUH6NCRux5djZh5-E5GG4AV2yzZVM",
@@ -461,6 +498,11 @@
       }
     });
 
+    function getTodayKey() {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    }
+
     window.saveData = async function() {
       localStorage.setItem('tb_registered', JSON.stringify(window.registeredTasks));
       localStorage.setItem('tb_active', JSON.stringify(window.activeTasks));
@@ -469,6 +511,7 @@
 
       if (currentUser) {
         try {
+          // リアルタイム作業状態の更新
           await setDoc(doc(db, "users", currentUser.uid), {
             registered: window.registeredTasks,
             active: window.activeTasks,
@@ -476,6 +519,15 @@
             timeline: window.timelineTasks,
             updatedAt: new Date().toISOString()
           });
+
+          // 日々の完了タスクを日付別サブコレクション（daily_logs）へ永久保存
+          const todayKey = getTodayKey();
+          await setDoc(doc(db, "users", currentUser.uid, "daily_logs", todayKey), {
+            date: todayKey,
+            tasks: window.completedTasks,
+            updatedAt: new Date().toISOString()
+          });
+
         } catch (e) {
           console.error("Firebase保存エラー:", e);
         }
@@ -483,33 +535,29 @@
     };
 
     function setupFirebaseSync() {
-  if (!currentUser) return;
-  const docRef = doc(db, "users", currentUser.uid);
+      if (!currentUser) return;
+      const docRef = doc(db, "users", currentUser.uid);
 
-  // Firestoreからリアルタイムで最新データを受信
-  unsubscribeSnapshot = onSnapshot(docRef, (docSnap) => {
-    if (docSnap.exists()) {
-      const data = docSnap.data();
-      
-      // クラウド側のデータで上書き
-      window.registeredTasks = data.registered || [];
-      window.activeTasks = data.active || [];
-      window.completedTasks = data.completed || [];
-      window.timelineTasks = data.timeline || [];
+      unsubscribeSnapshot = onSnapshot(docRef, (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          
+          window.registeredTasks = data.registered || [];
+          window.activeTasks = data.active || [];
+          window.completedTasks = data.completed || [];
+          window.timelineTasks = data.timeline || [];
 
-      // ローカルストレージも更新
-      localStorage.setItem('tb_registered', JSON.stringify(window.registeredTasks));
-      localStorage.setItem('tb_active', JSON.stringify(window.activeTasks));
-      localStorage.setItem('tb_completed', JSON.stringify(window.completedTasks));
-      localStorage.setItem('tb_timeline', JSON.stringify(window.timelineTasks));
+          localStorage.setItem('tb_registered', JSON.stringify(window.registeredTasks));
+          localStorage.setItem('tb_active', JSON.stringify(window.activeTasks));
+          localStorage.setItem('tb_completed', JSON.stringify(window.completedTasks));
+          localStorage.setItem('tb_timeline', JSON.stringify(window.timelineTasks));
 
-      renderAll();
+          renderAll();
+        }
+      }, (error) => {
+        console.error("Firestore同期エラー:", error);
+      });
     }
-  }, (error) => {
-    console.error("Firestore同期エラー:", error);
-    alert("同期に失敗しました: " + error.message);
-  });
-}
 
     function renderAll() {
       renderRegisteredTable();
@@ -548,6 +596,123 @@
       document.getElementById('bulkInput').value = '';
       window.saveData();
       renderRegisteredTable();
+    };
+
+    /* --- 過去ログ閲覧機能 --- */
+    window.openHistoryModal = async function() {
+      document.getElementById('historyModal').classList.remove('hidden');
+      const select = document.getElementById('historyDateSelect');
+      select.innerHTML = '<option value="">読み込み中...</option>';
+
+      if (!currentUser) {
+        select.innerHTML = `<option value="${getTodayKey()}">${getTodayKey()} (本日・ローカル保存)</option>`;
+        loadHistoryLogByDate(getTodayKey());
+        return;
+      }
+
+      try {
+        const querySnapshot = await getDocs(collection(db, "users", currentUser.uid, "daily_logs"));
+        const dates = [];
+        querySnapshot.forEach(doc => dates.push(doc.id));
+        dates.sort().reverse();
+
+        if (!dates.includes(getTodayKey())) {
+          dates.unshift(getTodayKey());
+        }
+
+        select.innerHTML = '<option value="">日付を選択してください</option>';
+        dates.forEach(d => {
+          const opt = document.createElement('option');
+          opt.value = d;
+          opt.textContent = d === getTodayKey() ? `${d} (本日)` : d;
+          select.appendChild(opt);
+        });
+
+        select.value = getTodayKey();
+        loadHistoryLogByDate(getTodayKey());
+      } catch (e) {
+        console.error("履歴取得エラー:", e);
+        select.innerHTML = '<option value="">エラーが発生しました</option>';
+      }
+    };
+
+    window.closeHistoryModal = function() {
+      document.getElementById('historyModal').classList.add('hidden');
+    };
+
+    window.loadHistoryLogByDate = async function(dateStr) {
+      const display = document.getElementById('historyLogDisplay');
+      if (!dateStr) {
+        display.textContent = '日付を選択してください。';
+        return;
+      }
+
+      display.textContent = '読み込み中...';
+      let tasks = [];
+
+      if (dateStr === getTodayKey()) {
+        tasks = window.completedTasks;
+      } else if (currentUser) {
+        try {
+          const docSnap = await getDoc(doc(db, "users", currentUser.uid, "daily_logs", dateStr));
+          if (docSnap.exists()) {
+            tasks = docSnap.data().tasks || [];
+          }
+        } catch (e) {
+          console.error("日別ログ読み込みエラー:", e);
+        }
+      }
+
+      if (tasks.length === 0) {
+        display.textContent = `【${dateStr}】\n完了タスクの記録はありません。`;
+        return;
+      }
+
+      const lines = tasks.map(t => {
+        const startObj = new Date(t.start);
+        const endObj = new Date(t.end);
+        const startStr = startObj.toTimeString().substring(0, 5);
+        const endStr = endObj.toTimeString().substring(0, 5);
+        const durMins = Math.round(t.durationSec / 60);
+        return `[${startStr} - ${endStr}] ${t.name} (${durMins}分)`;
+      });
+
+      display.textContent = `--- ${dateStr} 完了タスク記録 ---\n` + lines.join('\n');
+    };
+
+    window.copyHistoryLog = function() {
+      const text = document.getElementById('historyLogDisplay').textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        alert("ログをクリップボードにコピーしました！");
+      }).catch(err => {
+        alert("コピーに失敗しました: " + err);
+      });
+    };
+
+    /* --- 文字化け対策（BOM付き）ファイル出力 --- */
+    window.downloadCompletedTasks = function() {
+      if (!window.completedTasks || window.completedTasks.length === 0) {
+        alert("本日完了済みのタスク履歴がありません。");
+        return;
+      }
+      const lines = window.completedTasks.map(t => {
+        const startObj = new Date(t.start);
+        const endObj = new Date(t.end);
+        const startStr = startObj.toTimeString().substring(0, 5);
+        const endStr = endObj.toTimeString().substring(0, 5);
+        const durMins = Math.round(t.durationSec / 60);
+        return `[${startStr} - ${endStr}] ${t.name} (${durMins}分)`;
+      });
+
+      // \uFEFF (BOM: Byte Order Mark) を先頭に付与して文字化けを防止
+      const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
+      const blob = new Blob([bom, lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `completed_tasks_${getTodayKey()}.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
     };
 
     /* --- 編集モーダル操作 --- */
@@ -605,7 +770,6 @@
       });
       task.checklist = items;
 
-      // タイムライン連動
       const tlTask = window.timelineTasks.find(t => t.id === editingTaskId);
       if (tlTask) {
         tlTask.name = task.name;
@@ -659,7 +823,6 @@
       renderActiveTable();
     };
 
-    /* ★追加：着手済みタスクを登録一覧に戻す★ */
     window.returnToRegistered = function(id) {
       const idx = window.activeTasks.findIndex(t => t.id === id);
       if (idx === -1) return;
@@ -740,28 +903,6 @@
       window.timelineTasks = window.timelineTasks.filter(t => t.id !== id);
       window.saveData();
       renderHistoryTable();
-    };
-
-    window.downloadCompletedTasks = function() {
-      if (!window.completedTasks || window.completedTasks.length === 0) {
-        alert("完了済みのタスク履歴がありません。");
-        return;
-      }
-      const lines = window.completedTasks.map(t => {
-        const startObj = new Date(t.start);
-        const endObj = new Date(t.end);
-        const startStr = startObj.toTimeString().substring(0, 5);
-        const endStr = endObj.toTimeString().substring(0, 5);
-        const durMins = Math.round(t.durationSec / 60);
-        return `[${startStr} - ${endStr}] ${t.name} (${durMins}分)`;
-      });
-      const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `completed_tasks_${new Date().toISOString().slice(0,10)}.txt`;
-      a.click();
-      URL.revokeObjectURL(url);
     };
 
     window.assignTaskToTimeline = function(task) {
