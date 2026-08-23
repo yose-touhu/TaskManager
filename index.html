@@ -343,10 +343,11 @@
     </div>
 
     <div class="card">
-      <h2>4. 本日の完了履歴</h2>
-      <div style="margin-bottom: 8px; display:flex; gap:8px;">
-        <button class="btn-add" onclick="openHistoryModal()">📅 過去の記録ログを見る</button>
-        <button class="btn-edit" onclick="downloadCompletedTasks()">📄 テキストとして出力(文字化け対策済)</button>
+      <h2>4. 本日の完了エリア（画面用）</h2>
+      <div style="margin-bottom: 8px; display:flex; flex-wrap:wrap; gap:8px;">
+        <button class="btn-add" onclick="openHistoryModal()">📅 保存された全記録ログを見る</button>
+        <button class="btn-del" onclick="clearCompletedScreenOnly()">🧹 画面のリストを消去（履歴はクラウドに残ります）</button>
+        <button class="btn-edit" onclick="downloadCompletedTasks()">📄 テキスト出力(文字化け対策済)</button>
       </div>
       <table>
         <thead>
@@ -417,7 +418,7 @@
   <!-- 過去ログ閲覧モーダル -->
   <div id="historyModal" class="modal-overlay hidden">
     <div class="modal-card">
-      <h2>📅 日々の活動記録アーカイブ</h2>
+      <h2>📅 永久保存版・日々の活動記録</h2>
       
       <div>
         <label style="font-size:0.85rem; color:var(--text-sub);">閲覧したい日付を選択:</label>
@@ -442,7 +443,7 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
     import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-    import { getFirestore, doc, setDoc, getDoc, collection, getDocs, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+    import { getFirestore, doc, setDoc, getDoc, collection, getDocs, onSnapshot, arrayUnion } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyBeBKeUH6NCRux5djZh5-E5GG4AV2yzZVM",
@@ -511,7 +512,7 @@
 
       if (currentUser) {
         try {
-          // リアルタイム作業状態の更新
+          // アプリ画面用の作業状態を同期
           await setDoc(doc(db, "users", currentUser.uid), {
             registered: window.registeredTasks,
             active: window.activeTasks,
@@ -519,20 +520,29 @@
             timeline: window.timelineTasks,
             updatedAt: new Date().toISOString()
           });
-
-          // 日々の完了タスクを日付別サブコレクション（daily_logs）へ永久保存
-          const todayKey = getTodayKey();
-          await setDoc(doc(db, "users", currentUser.uid, "daily_logs", todayKey), {
-            date: todayKey,
-            tasks: window.completedTasks,
-            updatedAt: new Date().toISOString()
-          });
-
         } catch (e) {
           console.error("Firebase保存エラー:", e);
         }
       }
     };
+
+    // タスク完了時に「日別ログ（daily_logs）」へ永久保存する独立関数
+    async function archiveCompletedTaskToFirestore(completedTaskItem) {
+      if (!currentUser) return;
+      try {
+        const todayKey = getTodayKey();
+        const logDocRef = doc(db, "users", currentUser.uid, "daily_logs", todayKey);
+        
+        // 追記（arrayUnion）で配列要素として追加。既存のログを消さずに蓄積
+        await setDoc(logDocRef, {
+          date: todayKey,
+          tasks: arrayUnion(completedTaskItem),
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+      } catch (e) {
+        console.error("永久アーカイブ保存エラー:", e);
+      }
+    }
 
     function setupFirebaseSync() {
       if (!currentUser) return;
@@ -650,21 +660,23 @@
       display.textContent = '読み込み中...';
       let tasks = [];
 
-      if (dateStr === getTodayKey()) {
-        tasks = window.completedTasks;
-      } else if (currentUser) {
+      if (currentUser) {
         try {
           const docSnap = await getDoc(doc(db, "users", currentUser.uid, "daily_logs", dateStr));
           if (docSnap.exists()) {
             tasks = docSnap.data().tasks || [];
+          } else if (dateStr === getTodayKey()) {
+            tasks = window.completedTasks;
           }
         } catch (e) {
           console.error("日別ログ読み込みエラー:", e);
         }
+      } else if (dateStr === getTodayKey()) {
+        tasks = window.completedTasks;
       }
 
       if (tasks.length === 0) {
-        display.textContent = `【${dateStr}】\n完了タスクの記録はありません。`;
+        display.textContent = `【${dateStr}】\n保存された完了タスク記録はありません。`;
         return;
       }
 
@@ -692,7 +704,7 @@
     /* --- 文字化け対策（BOM付き）ファイル出力 --- */
     window.downloadCompletedTasks = function() {
       if (!window.completedTasks || window.completedTasks.length === 0) {
-        alert("本日完了済みのタスク履歴がありません。");
+        alert("現在画面に表示されている完了タスクがありません。");
         return;
       }
       const lines = window.completedTasks.map(t => {
@@ -704,7 +716,6 @@
         return `[${startStr} - ${endStr}] ${t.name} (${durMins}分)`;
       });
 
-      // \uFEFF (BOM: Byte Order Mark) を先頭に付与して文字化けを防止
       const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
       const blob = new Blob([bom, lines.join('\n')], { type: 'text/plain;charset=utf-8' });
       const url = URL.createObjectURL(blob);
@@ -871,7 +882,7 @@
       }
     }
 
-    window.completeTask = function(id) {
+    window.completeTask = async function(id) {
       const idx = window.activeTasks.findIndex(t => t.id === id);
       if (idx === -1) return;
       const task = window.activeTasks.splice(idx, 1)[0];
@@ -883,7 +894,9 @@
       const durationMins = Math.max(1, Math.round(task.elapsedSec / 60));
       const startMinutes = startTime.getHours() * 60 + startTime.getMinutes();
 
-      window.completedTasks.push({ id: task.id, name: task.name, start: startTime.toISOString(), end: endTime.toISOString(), durationSec: task.elapsedSec });
+      const completedItem = { id: task.id, name: task.name, start: startTime.toISOString(), end: endTime.toISOString(), durationSec: task.elapsedSec };
+      
+      window.completedTasks.push(completedItem);
 
       const existingTL = window.timelineTasks.find(t => t.id === task.id);
       if (existingTL) {
@@ -894,15 +907,29 @@
       }
 
       window.saveData();
+      // Firestoreの永久保存用サブコレクションへ追記保存
+      await archiveCompletedTaskToFirestore(completedItem);
+
       renderActiveTable();
       renderHistoryTable();
     };
 
+    /* ★修正点：アプリ画面上のリストからのみ削除（Firebase上の永久ログは残る）★ */
     window.deleteHistory = function(id) {
       window.completedTasks = window.completedTasks.filter(t => t.id !== id);
       window.timelineTasks = window.timelineTasks.filter(t => t.id !== id);
       window.saveData();
       renderHistoryTable();
+    };
+
+    /* ★追加：画面上の完了リストを一括でクリアする機能（Firebase上の永久ログは残る）★ */
+    window.clearCompletedScreenOnly = function() {
+      if (window.completedTasks.length === 0) return;
+      if (confirm("画面上の完了タスク表示を削除して一覧をきれいにしますか？\n（※クラウドに保存された日々の過去ログは消えませんのでご安心ください）")) {
+        window.completedTasks = [];
+        window.saveData();
+        renderHistoryTable();
+      }
     };
 
     window.assignTaskToTimeline = function(task) {
