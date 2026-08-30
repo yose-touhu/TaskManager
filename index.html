@@ -221,8 +221,8 @@
       padding: 8px 12px;
       border-radius: 6px;
       font-size: 0.9rem;
-      cursor: grab;
-      touch-action: none;
+      cursor: pointer;
+      touch-action: manipulation;
     }
 
     .timeline-wrapper {
@@ -258,8 +258,8 @@
 
     .draggable-task {
       position: absolute;
-      left: 4px;
-      right: 4px;
+      left: 70px;
+      right: 10px;
       background-color: #0288d1;
       color: #ffffff;
       border-radius: 6px;
@@ -283,7 +283,7 @@
       gap: 4px;
     }
 
-    .btn-group-mini button { padding: 2px 6px; font-size: 0.75rem; }
+    .btn-group-mini button { padding: 4px 6px; font-size: 0.75rem; line-height: 1; }
 
     .modal-overlay {
       position: fixed;
@@ -415,6 +415,7 @@
       </div>
       <div class="timeline-wrapper" id="timelineWrapper">
         <div class="timeline-grid" id="timelineGrid"></div>
+        <div id="timelineTasksContainer"></div>
       </div>
     </div>
   </div>
@@ -1131,19 +1132,16 @@
       drawAnalogClock();
     };
 
-    /* 新機能: 完了エリアから未完了（着手待ち一覧）へ復帰させる関数 */
     window.restoreFromCompleted = function(id) {
       const idx = window.completedTasks.findIndex(t => t.id === id);
       if (idx === -1) return;
       const task = window.completedTasks.splice(idx, 1)[0];
 
-      // タイムライン上の同一タスクの完了表示フラグを戻す
       const tlTask = window.timelineTasks.find(t => t.id === id);
       if (tlTask) {
         tlTask.isCompleted = false;
       }
 
-      // 未完了の「登録済みタスク」に戻す
       window.registeredTasks.push({
         id: task.id,
         name: task.name,
@@ -1197,8 +1195,19 @@
       if (!name) return;
       const now = new Date();
       const currentMins = now.getHours() * 60 + Math.floor(now.getMinutes() / 15) * 15;
+      const newId = Date.now() + Math.random();
+      
+      // 未完了登録リストとタイムラインの両方に追加
+      window.registeredTasks.push({
+        id: newId,
+        name: name,
+        est: 30,
+        memo: "",
+        checklist: []
+      });
+
       window.timelineTasks.push({ 
-        id: Date.now(), 
+        id: newId, 
         name: name, 
         startMin: currentMins, 
         durationMin: 30, 
@@ -1206,13 +1215,25 @@
         memo: "",
         checklist: []
       });
+
+      window.saveData();
+      renderRegisteredTable();
+      renderTimeline();
+    };
+
+    /* タイムラインから外して未配置に戻す */
+    window.unassignTimelineTask = function(id) {
+      window.timelineTasks = window.timelineTasks.filter(t => t.id !== id);
       window.saveData();
       renderTimeline();
     };
 
+    /* タイムライン上から完全削除 */
     window.deleteTimelineTask = function(id) {
       window.timelineTasks = window.timelineTasks.filter(t => t.id !== id);
+      window.registeredTasks = window.registeredTasks.filter(t => t.id !== id);
       window.saveData();
+      renderRegisteredTable();
       renderTimeline();
     };
 
@@ -1342,12 +1363,15 @@
         grid.appendChild(slot);
       }
 
-      const wrapper = document.getElementById('timelineWrapper');
+      const container = document.getElementById('timelineTasksContainer');
+      container.innerHTML = '';
+
       window.timelineTasks.forEach(task => {
         const el = document.createElement('div');
         el.className = `draggable-task ${task.isCompleted ? 'completed' : ''}`;
         el.style.top = `${task.startMin}px`;
         el.style.height = `${Math.max(30, task.durationMin)}px`;
+        
         const startH = String(Math.floor(task.startMin / 60)).padStart(2, '0');
         const startM = String(task.startMin % 60).padStart(2, '0');
 
@@ -1358,7 +1382,9 @@
         }
 
         el.innerHTML = `
-          <div><span>[${startH}:${startM}] ${escapeHtml(task.name)}${checkInfo} (${task.durationMin}分)</span></div>
+          <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-right:8px;">
+            <span>[${startH}:${startM}] ${escapeHtml(task.name)}${checkInfo} (${task.durationMin}分)</span>
+          </div>
         `;
 
         const btnGroup = document.createElement('div');
@@ -1367,20 +1393,28 @@
         const editBtn = document.createElement('button');
         editBtn.className = 'btn-edit';
         editBtn.textContent = '✎';
+        editBtn.title = '編集';
         editBtn.onclick = (e) => { e.stopPropagation(); window.openEditModal(task.id); };
+
+        const unassignBtn = document.createElement('button');
+        unassignBtn.className = 'btn-del';
+        unassignBtn.textContent = '↩';
+        unassignBtn.title = '未配置（上のプール）に戻す';
+        unassignBtn.onclick = (e) => { e.stopPropagation(); window.unassignTimelineTask(task.id); };
 
         const removeBtn = document.createElement('button');
         removeBtn.className = 'btn-del';
-        removeBtn.textContent = '↩';
-        removeBtn.title = 'タイムラインから外す';
+        removeBtn.textContent = '🗑️';
+        removeBtn.title = '完全に削除';
         removeBtn.onclick = (e) => { e.stopPropagation(); window.deleteTimelineTask(task.id); };
 
         btnGroup.appendChild(editBtn);
+        btnGroup.appendChild(unassignBtn);
         btnGroup.appendChild(removeBtn);
         el.appendChild(btnGroup);
 
         makeDraggableOnly(el, task);
-        wrapper.appendChild(el);
+        container.appendChild(el);
       });
     }
 
@@ -1390,23 +1424,23 @@
       let initialTop = 0;
 
       const handleStart = (e) => {
-        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-        const target = e.target;
-        if (target.closest('.btn-group-mini')) return;
+        if (e.target.closest('.btn-group-mini')) return;
 
         isDragging = true;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
         startY = clientY;
         initialTop = task.startMin;
 
-        document.addEventListener('mousemove', handleMove);
-        document.addEventListener('mouseup', handleEnd);
-        document.addEventListener('touchmove', handleMove, { passive: false });
-        document.addEventListener('touchend', handleEnd);
+        window.addEventListener('mousemove', handleMove);
+        window.addEventListener('mouseup', handleEnd);
+        window.addEventListener('touchmove', handleMove, { passive: false });
+        window.addEventListener('touchend', handleEnd);
       };
 
       const handleMove = (e) => {
         if (!isDragging) return;
         if (e.cancelable) e.preventDefault();
+
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
         const deltaY = clientY - startY;
 
@@ -1418,7 +1452,14 @@
         const startH = String(Math.floor(task.startMin / 60)).padStart(2, '0');
         const startM = String(task.startMin % 60).padStart(2, '0');
         const textSpan = el.querySelector('span');
-        if (textSpan) textSpan.textContent = `[${startH}:${startM}] ${task.name} (${task.durationMin}分)`;
+        if (textSpan) {
+          let checkInfo = '';
+          if (task.checklist && task.checklist.length > 0) {
+            const done = task.checklist.filter(c => c.done).length;
+            checkInfo = ` (${done}/${task.checklist.length})`;
+          }
+          textSpan.textContent = `[${startH}:${startM}] ${task.name}${checkInfo} (${task.durationMin}分)`;
+        }
       };
 
       const handleEnd = () => {
@@ -1426,10 +1467,10 @@
           isDragging = false;
           window.saveData();
         }
-        document.removeEventListener('mousemove', handleMove);
-        document.removeEventListener('mouseup', handleEnd);
-        document.removeEventListener('touchmove', handleMove);
-        document.removeEventListener('touchend', handleEnd);
+        window.removeEventListener('mousemove', handleMove);
+        window.removeEventListener('mouseup', handleEnd);
+        window.removeEventListener('touchmove', handleMove);
+        window.removeEventListener('touchend', handleEnd);
       };
 
       el.addEventListener('mousedown', handleStart);
