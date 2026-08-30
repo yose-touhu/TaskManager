@@ -57,8 +57,8 @@
 
     .tab-btn {
       flex: 1;
-      padding: 12px;
-      font-size: 1.1rem;
+      padding: 12px 6px;
+      font-size: 1rem;
       font-weight: 900;
       background-color: #2a2a2a;
       color: var(--text-sub);
@@ -90,6 +90,9 @@
       margin-bottom: 10px;
       border-bottom: 1px solid var(--border-color);
       padding-bottom: 4px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
     }
 
     .input-group {
@@ -125,6 +128,52 @@
     .btn-stop { background-color: var(--accent-stop); color: #fff; }
     .btn-edit { background-color: #f57c00; color: #fff; }
     .btn-del { background-color: #444; color: #fff; }
+
+    /* ワンタッチテンプレートエリア */
+    .template-box {
+      background-color: #1a1a1a;
+      border: 1px dashed var(--border-color);
+      padding: 10px;
+      border-radius: 6px;
+      margin-bottom: 10px;
+    }
+    .template-btns {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 6px;
+    }
+    .btn-template {
+      background-color: #2a2a2a;
+      border: 1px solid var(--accent-color);
+      color: var(--accent-color);
+      font-size: 0.85rem;
+      padding: 6px 12px;
+      border-radius: 20px;
+    }
+    .btn-template:hover {
+      background-color: var(--accent-color);
+      color: #000;
+    }
+
+    /* アナログタイマー */
+    .active-container {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .analog-clock-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    #analogClock {
+      background-color: #1a1a1a;
+      border-radius: 50%;
+      box-shadow: 0 0 8px rgba(0,0,0,0.5);
+    }
 
     table {
       width: 100%;
@@ -222,33 +271,19 @@
       touch-action: none;
       z-index: 10;
       display: flex;
-      flex-direction: column;
       justify-content: space-between;
+      align-items: center;
     }
 
     .draggable-task:active { cursor: grabbing; opacity: 0.85; z-index: 20; }
     .draggable-task.completed { background-color: var(--accent-color); color: #000000; }
 
-    .resize-handle {
-      position: absolute;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      height: 10px;
-      cursor: ns-resize;
-      background: rgba(255,255,255,0.2);
-      border-radius: 0 0 6px 6px;
-    }
-
     .btn-group-mini {
-      position: absolute;
-      right: 4px;
-      top: 4px;
       display: flex;
       gap: 4px;
     }
 
-    .btn-group-mini button { padding: 2px 6px; font-size: 0.7rem; }
+    .btn-group-mini button { padding: 2px 6px; font-size: 0.75rem; }
 
     .modal-overlay {
       position: fixed;
@@ -302,14 +337,51 @@
   <div class="tab-header">
     <button class="tab-btn active" onclick="switchTab('taskTab', this)">📋 タスク管理</button>
     <button class="tab-btn" onclick="switchTab('timelineTab', this)">⏰ タイムライン</button>
+    <button class="tab-btn" onclick="switchTab('historyTab', this)">✅ 完了・ログ</button>
   </div>
 
   <!-- 【タブ1】タスク管理・実行画面 -->
   <div id="taskTab" class="tab-content active">
+    
+    <!-- 実行中テーブル（タイマー計測＆アナログ時計） -->
+    <div class="card" style="border: 2px solid var(--accent-color);">
+      <h2>🔥 実行中タスク（タスク着手中エリア）</h2>
+      <div class="active-container">
+        <!-- アナログ時計表示エリア -->
+        <div class="analog-clock-wrapper">
+          <canvas id="analogClock" width="100" height="100"></canvas>
+        </div>
+        <!-- 実行中テーブル -->
+        <div style="flex: 1; min-width: 250px; overflow-x: auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>タスク詳細</th>
+                <th>経過時間</th>
+                <th>タイマー操作</th>
+              </tr>
+            </thead>
+            <tbody id="activeTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- タスク登録エリア ＆ よく使うタスク（ワンタッチ） -->
     <div class="card">
-      <h2>1. タスク一括登録（1行につき1タスク）</h2>
+      <h2>
+        <span>1. タスク登録（一括入力）</span>
+        <button class="btn-edit" style="font-size:0.8rem;" onclick="openTemplateManagerModal()">⚙️ 定型文編集</button>
+      </h2>
+      
+      <!-- ワンタッチ追加エリア -->
+      <div class="template-box">
+        <div style="font-size:0.85rem; color:var(--text-sub);">⚡ よく使うタスク（ワンタッチで全自動入力）:</div>
+        <div class="template-btns" id="templateBtnsContainer"></div>
+      </div>
+
       <div class="input-group">
-        <textarea id="bulkInput" placeholder="例:&#10;メール返信, 15&#10;資料作成, 45&#10;ミーティング, 30"></textarea>
+        <textarea id="bulkInput" placeholder="例:&#10;メール返信, 15&#10;夜のルーティン, 30&#10;資料作成, 45"></textarea>
         <button class="btn-add" onclick="addBulkTasks()">タスクを一括登録する</button>
       </div>
     </div>
@@ -327,26 +399,33 @@
         <tbody id="registeredTableBody"></tbody>
       </table>
     </div>
+  </div>
 
-    <div class="card" style="border: 2px solid var(--accent-color);">
-      <h2>3. 実行中テーブル（タイマー計測）</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>タスク詳細</th>
-            <th>経過時間</th>
-            <th>タイマー操作</th>
-          </tr>
-        </thead>
-        <tbody id="activeTableBody"></tbody>
-      </table>
+  <!-- 【タブ2】タイムライン画面 -->
+  <div id="timelineTab" class="tab-content">
+    <div class="card">
+      <h2>未配置の登録タスク（タップで配置）</h2>
+      <div class="unassigned-pool" id="unassignedPool"></div>
     </div>
 
     <div class="card">
-      <h2>4. 本日の完了エリア（画面用）</h2>
-      <div style="margin-bottom: 8px; display:flex; flex-wrap:wrap; gap:8px;">
+      <h2>24時間 タイムライン（ドラッグで移動）</h2>
+      <div style="margin-bottom: 10px;">
+        <button class="btn-add" onclick="addQuickTimelineTask()">＋ クイックタスク追加</button>
+      </div>
+      <div class="timeline-wrapper" id="timelineWrapper">
+        <div class="timeline-grid" id="timelineGrid"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 【タブ3】完了タスク・過去ログ閲覧 -->
+  <div id="historyTab" class="tab-content">
+    <div class="card">
+      <h2>✅ 本日の完了エリア ＆ 過去ログ</h2>
+      <div style="margin-bottom: 12px; display:flex; flex-wrap:wrap; gap:8px;">
         <button class="btn-add" onclick="openHistoryModal()">📅 保存された全記録ログを見る</button>
-        <button class="btn-del" onclick="clearCompletedScreenOnly()">🧹 画面のリストを消去（履歴はクラウドに残ります）</button>
+        <button class="btn-del" onclick="clearCompletedScreenOnly()">🧹 画面のリストを消去（クラウドログは残ります）</button>
         <button class="btn-edit" onclick="downloadCompletedTasks()">📄 テキスト出力(文字化け対策済)</button>
       </div>
       <table>
@@ -364,20 +443,31 @@
     </div>
   </div>
 
-  <!-- 【タブ2】タイムライン画面 -->
-  <div id="timelineTab" class="tab-content">
-    <div class="card">
-      <h2>未配置の登録タスク（ドラッグまたはタップで配置）</h2>
-      <div class="unassigned-pool" id="unassignedPool"></div>
-    </div>
-
-    <div class="card">
-      <h2>24時間 タイムライン（ドラッグで移動・端を引いて長さ変更）</h2>
-      <div style="margin-bottom: 10px;">
-        <button class="btn-add" onclick="addQuickTimelineTask()">＋ クイックタスク追加</button>
+  <!-- 定型文（ワンタッチテンプレート）管理モーダル -->
+  <div id="templateModal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <h2>⚙️ 定型タスク（よく使うタスク）編集</h2>
+      <div>
+        <label style="font-size:0.85rem; color:var(--text-sub);">タスク名</label>
+        <input type="text" id="tplTitleInput" placeholder="例: 夜のルーティン" style="width:100%;">
       </div>
-      <div class="timeline-wrapper" id="timelineWrapper">
-        <div class="timeline-grid" id="timelineGrid"></div>
+      <div>
+        <label style="font-size:0.85rem; color:var(--text-sub);">予定時間（分）</label>
+        <input type="text" id="tplEstInput" value="30" style="width:100%;">
+      </div>
+      <div>
+        <label style="font-size:0.85rem; color:var(--text-sub);">工程・行程（1行につき1項目）</label>
+        <textarea id="tplSubInput" placeholder="例:&#10;ストレッチ&#10;日記を書く&#10;明日の準備"></textarea>
+      </div>
+      <button class="btn-add" onclick="saveTemplateFromModal()">定型タスクを追加保存</button>
+
+      <div style="border-top: 1px solid var(--border-color); pt-2; margin-top:8px;">
+        <label style="font-size:0.85rem; color:var(--text-sub);">登録済み定型一覧:</label>
+        <div id="templateManageList" style="margin-top:6px;"></div>
+      </div>
+      
+      <div style="display:flex; justify-content:flex-end; margin-top:8px;">
+        <button class="btn-del" onclick="closeTemplateManagerModal()">閉じる</button>
       </div>
     </div>
   </div>
@@ -468,6 +558,10 @@
     window.activeTasks = JSON.parse(localStorage.getItem('tb_active')) || [];
     window.completedTasks = JSON.parse(localStorage.getItem('tb_completed')) || [];
     window.timelineTasks = JSON.parse(localStorage.getItem('tb_timeline')) || [];
+    window.taskTemplates = JSON.parse(localStorage.getItem('tb_templates')) || [
+      { id: '1', title: '夜のルーティン', est: 30, sub: 'ストレッチ\n日記を書く\n明日の準備' }
+    ];
+
     window.timerInterval = null;
     let editingTaskId = null;
 
@@ -509,15 +603,16 @@
       localStorage.setItem('tb_active', JSON.stringify(window.activeTasks));
       localStorage.setItem('tb_completed', JSON.stringify(window.completedTasks));
       localStorage.setItem('tb_timeline', JSON.stringify(window.timelineTasks));
+      localStorage.setItem('tb_templates', JSON.stringify(window.taskTemplates));
 
       if (currentUser) {
         try {
-          // アプリ画面用の作業状態を同期
           await setDoc(doc(db, "users", currentUser.uid), {
             registered: window.registeredTasks,
             active: window.activeTasks,
             completed: window.completedTasks,
             timeline: window.timelineTasks,
+            templates: window.taskTemplates,
             updatedAt: new Date().toISOString()
           });
         } catch (e) {
@@ -526,14 +621,11 @@
       }
     };
 
-    // タスク完了時に「日別ログ（daily_logs）」へ永久保存する独立関数
     async function archiveCompletedTaskToFirestore(completedTaskItem) {
       if (!currentUser) return;
       try {
         const todayKey = getTodayKey();
         const logDocRef = doc(db, "users", currentUser.uid, "daily_logs", todayKey);
-        
-        // 追記（arrayUnion）で配列要素として追加。既存のログを消さずに蓄積
         await setDoc(logDocRef, {
           date: todayKey,
           tasks: arrayUnion(completedTaskItem),
@@ -551,16 +643,17 @@
       unsubscribeSnapshot = onSnapshot(docRef, (docSnap) => {
         if (docSnap.exists()) {
           const data = docSnap.data();
-          
           window.registeredTasks = data.registered || [];
           window.activeTasks = data.active || [];
           window.completedTasks = data.completed || [];
           window.timelineTasks = data.timeline || [];
+          window.taskTemplates = data.templates || window.taskTemplates;
 
           localStorage.setItem('tb_registered', JSON.stringify(window.registeredTasks));
           localStorage.setItem('tb_active', JSON.stringify(window.activeTasks));
           localStorage.setItem('tb_completed', JSON.stringify(window.completedTasks));
           localStorage.setItem('tb_timeline', JSON.stringify(window.timelineTasks));
+          localStorage.setItem('tb_templates', JSON.stringify(window.taskTemplates));
 
           renderAll();
         }
@@ -570,9 +663,11 @@
     }
 
     function renderAll() {
+      renderTemplateButtons();
       renderRegisteredTable();
       renderActiveTable();
       renderHistoryTable();
+      drawAnalogClock();
       if (document.getElementById('timelineTab').classList.contains('active')) {
         renderTimeline();
       }
@@ -585,6 +680,117 @@
       btn.classList.add('active');
       if (tabId === 'timelineTab') renderTimeline();
     };
+
+    /* --- アナログ時計の描画 --- */
+    function drawAnalogClock() {
+      const canvas = document.getElementById('analogClock');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const radius = canvas.width / 2;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      ctx.beginPath();
+      ctx.arc(radius, radius, radius - 4, 0, 2 * Math.PI);
+      ctx.fillStyle = '#1e1e1e';
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#29b6f6';
+      ctx.stroke();
+
+      const runningTask = window.activeTasks.find(t => t.isRunning) || window.activeTasks[0];
+      const elapsedSec = runningTask ? runningTask.elapsedSec : 0;
+
+      let elapsedMins = (elapsedSec / 60) % 60;
+      let endAngle = (elapsedMins / 60) * 2 * Math.PI - (Math.PI / 2);
+      ctx.beginPath();
+      ctx.moveTo(radius, radius);
+      ctx.arc(radius, radius, radius - 6, -Math.PI / 2, endAngle, false);
+      ctx.fillStyle = 'rgba(41, 182, 246, 0.3)';
+      ctx.fill();
+
+      let secAngle = ((elapsedSec % 60) / 60) * 2 * Math.PI - (Math.PI / 2);
+      drawClockHand(ctx, radius, radius, secAngle, radius - 12, 1.5, '#ff5252');
+      drawClockHand(ctx, radius, radius, endAngle, radius - 20, 3, '#29b6f6');
+    }
+
+    function drawClockHand(ctx, cx, cy, angle, length, width, color) {
+      ctx.beginPath();
+      ctx.lineWidth = width;
+      ctx.lineCap = "round";
+      ctx.strokeStyle = color;
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + length * Math.cos(angle), cy + length * Math.sin(angle));
+      ctx.stroke();
+    }
+
+    /* --- 定型テンプレート処理 --- */
+    function renderTemplateButtons() {
+      const container = document.getElementById('templateBtnsContainer');
+      if (!container) return;
+      container.innerHTML = '';
+      window.taskTemplates.forEach(tpl => {
+        const btn = document.createElement('button');
+        btn.className = 'btn-template';
+        btn.textContent = `＋ ${tpl.title}`;
+        btn.onclick = () => applyTemplateToInput(tpl);
+        container.appendChild(btn);
+      });
+    }
+
+    function applyTemplateToInput(tpl) {
+      const checklistItems = tpl.sub ? tpl.sub.split('\n').filter(s => s.trim()).map(s => ({ text: s.trim(), done: false })) : [];
+      window.registeredTasks.push({
+        id: Date.now() + Math.random(),
+        name: tpl.title,
+        est: parseInt(tpl.est, 10) || 30,
+        memo: "",
+        checklist: checklistItems
+      });
+      window.saveData();
+      renderRegisteredTable();
+    }
+
+    window.openTemplateManagerModal = function() {
+      document.getElementById('templateModal').classList.remove('hidden');
+      renderTemplateManagerList();
+    };
+
+    window.closeTemplateManagerModal = function() {
+      document.getElementById('templateModal').classList.add('hidden');
+    };
+
+    window.saveTemplateFromModal = function() {
+      const title = document.getElementById('tplTitleInput').value.trim();
+      const est = document.getElementById('tplEstInput').value.trim();
+      const sub = document.getElementById('tplSubInput').value.trim();
+      if (!title) return;
+
+      window.taskTemplates.push({ id: Date.now().toString(), title, est, sub });
+      document.getElementById('tplTitleInput').value = '';
+      document.getElementById('tplSubInput').value = '';
+      window.saveData();
+      renderTemplateButtons();
+      renderTemplateManagerList();
+    };
+
+    window.deleteTemplate = function(id) {
+      window.taskTemplates = window.taskTemplates.filter(t => t.id !== id);
+      window.saveData();
+      renderTemplateButtons();
+      renderTemplateManagerList();
+    };
+
+    function renderTemplateManagerList() {
+      const container = document.getElementById('templateManageList');
+      container.innerHTML = '';
+      window.taskTemplates.forEach(t => {
+        const div = document.createElement('div');
+        div.style.cssText = 'display:flex; justify-content:space-between; align-items:center; margin-top:6px; background:#111; padding:6px 10px; border-radius:4px;';
+        div.innerHTML = `<span><strong>${escapeHtml(t.title)}</strong> (${t.est}分)</span>
+          <button class="btn-del" style="padding:2px 6px; font-size:0.75rem;" onclick="deleteTemplate('${t.id}')">削除</button>`;
+        container.appendChild(div);
+      });
+    }
 
     window.addBulkTasks = function() {
       const text = document.getElementById('bulkInput').value.trim();
@@ -701,7 +907,6 @@
       });
     };
 
-    /* --- 文字化け対策（BOM付き）ファイル出力 --- */
     window.downloadCompletedTasks = function() {
       if (!window.completedTasks || window.completedTasks.length === 0) {
         alert("現在画面に表示されている完了タスクがありません。");
@@ -832,6 +1037,7 @@
       window.saveData();
       renderRegisteredTable();
       renderActiveTable();
+      drawAnalogClock();
     };
 
     window.returnToRegistered = function(id) {
@@ -852,6 +1058,7 @@
       window.saveData();
       renderRegisteredTable();
       renderActiveTable();
+      drawAnalogClock();
     };
 
     window.toggleTimer = function(id) {
@@ -875,6 +1082,7 @@
         window.timerInterval = setInterval(() => {
           window.activeTasks.forEach(t => { if (t.isRunning) t.elapsedSec++; });
           renderActiveTable();
+          drawAnalogClock();
         }, 1000);
       } else if (!anyRunning && window.timerInterval) {
         clearInterval(window.timerInterval);
@@ -894,7 +1102,16 @@
       const durationMins = Math.max(1, Math.round(task.elapsedSec / 60));
       const startMinutes = startTime.getHours() * 60 + startTime.getMinutes();
 
-      const completedItem = { id: task.id, name: task.name, start: startTime.toISOString(), end: endTime.toISOString(), durationSec: task.elapsedSec };
+      const completedItem = { 
+        id: task.id, 
+        name: task.name, 
+        est: task.est || durationMins,
+        memo: task.memo || "",
+        checklist: task.checklist || [],
+        start: startTime.toISOString(), 
+        end: endTime.toISOString(), 
+        durationSec: task.elapsedSec 
+      };
       
       window.completedTasks.push(completedItem);
 
@@ -907,14 +1124,42 @@
       }
 
       window.saveData();
-      // Firestoreの永久保存用サブコレクションへ追記保存
       await archiveCompletedTaskToFirestore(completedItem);
 
       renderActiveTable();
       renderHistoryTable();
+      drawAnalogClock();
     };
 
-    /* ★修正点：アプリ画面上のリストからのみ削除（Firebase上の永久ログは残る）★ */
+    /* 新機能: 完了エリアから未完了（着手待ち一覧）へ復帰させる関数 */
+    window.restoreFromCompleted = function(id) {
+      const idx = window.completedTasks.findIndex(t => t.id === id);
+      if (idx === -1) return;
+      const task = window.completedTasks.splice(idx, 1)[0];
+
+      // タイムライン上の同一タスクの完了表示フラグを戻す
+      const tlTask = window.timelineTasks.find(t => t.id === id);
+      if (tlTask) {
+        tlTask.isCompleted = false;
+      }
+
+      // 未完了の「登録済みタスク」に戻す
+      window.registeredTasks.push({
+        id: task.id,
+        name: task.name,
+        est: task.est || Math.round((task.durationSec || 60) / 60),
+        memo: task.memo || "",
+        checklist: task.checklist || []
+      });
+
+      window.saveData();
+      renderRegisteredTable();
+      renderHistoryTable();
+      if (document.getElementById('timelineTab').classList.contains('active')) {
+        renderTimeline();
+      }
+    };
+
     window.deleteHistory = function(id) {
       window.completedTasks = window.completedTasks.filter(t => t.id !== id);
       window.timelineTasks = window.timelineTasks.filter(t => t.id !== id);
@@ -922,7 +1167,6 @@
       renderHistoryTable();
     };
 
-    /* ★追加：画面上の完了リストを一括でクリアする機能（Firebase上の永久ログは残る）★ */
     window.clearCompletedScreenOnly = function() {
       if (window.completedTasks.length === 0) return;
       if (confirm("画面上の完了タスク表示を削除して一覧をきれいにしますか？\n（※クラウドに保存された日々の過去ログは消えませんのでご安心ください）")) {
@@ -1058,7 +1302,10 @@
           <td>${startStr}</td>
           <td>${endStr}</td>
           <td>${durMins}分</td>
-          <td><button class="btn-del" onclick="deleteHistory(${t.id})">削除</button></td>
+          <td>
+            <button class="btn-edit" onclick="restoreFromCompleted(${t.id})" title="未完了リストへ戻す">未配置に戻す ↩</button>
+            <button class="btn-del" onclick="deleteHistory(${t.id})">削除</button>
+          </td>
         `;
         tbody.appendChild(tr);
       });
@@ -1100,7 +1347,7 @@
         const el = document.createElement('div');
         el.className = `draggable-task ${task.isCompleted ? 'completed' : ''}`;
         el.style.top = `${task.startMin}px`;
-        el.style.height = `${Math.max(20, task.durationMin)}px`;
+        el.style.height = `${Math.max(30, task.durationMin)}px`;
         const startH = String(Math.floor(task.startMin / 60)).padStart(2, '0');
         const startM = String(task.startMin % 60).padStart(2, '0');
 
@@ -1112,47 +1359,44 @@
 
         el.innerHTML = `
           <div><span>[${startH}:${startM}] ${escapeHtml(task.name)}${checkInfo} (${task.durationMin}分)</span></div>
-          <div class="resize-handle"></div>
         `;
 
         const btnGroup = document.createElement('div');
         btnGroup.className = 'btn-group-mini';
+
         const editBtn = document.createElement('button');
         editBtn.className = 'btn-edit';
         editBtn.textContent = '✎';
         editBtn.onclick = (e) => { e.stopPropagation(); window.openEditModal(task.id); };
-        const delBtn = document.createElement('button');
-        delBtn.className = 'btn-del';
-        delBtn.textContent = '✕';
-        delBtn.onclick = (e) => { e.stopPropagation(); window.deleteTimelineTask(task.id); };
+
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'btn-del';
+        removeBtn.textContent = '↩';
+        removeBtn.title = 'タイムラインから外す';
+        removeBtn.onclick = (e) => { e.stopPropagation(); window.deleteTimelineTask(task.id); };
 
         btnGroup.appendChild(editBtn);
-        btnGroup.appendChild(delBtn);
+        btnGroup.appendChild(removeBtn);
         el.appendChild(btnGroup);
-        makeDraggableAndResizable(el, task);
+
+        makeDraggableOnly(el, task);
         wrapper.appendChild(el);
       });
     }
 
-    function makeDraggableAndResizable(el, task) {
+    function makeDraggableOnly(el, task) {
       let isDragging = false;
-      let isResizing = false;
       let startY = 0;
       let initialTop = 0;
-      let initialHeight = 0;
 
       const handleStart = (e) => {
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
         const target = e.target;
-        if (target.classList.contains('resize-handle')) {
-          isResizing = true;
-        } else if (!target.closest('.btn-group-mini')) {
-          isDragging = true;
-        } else return;
+        if (target.closest('.btn-group-mini')) return;
 
+        isDragging = true;
         startY = clientY;
         initialTop = task.startMin;
-        initialHeight = task.durationMin;
 
         document.addEventListener('mousemove', handleMove);
         document.addEventListener('mouseup', handleEnd);
@@ -1161,22 +1405,15 @@
       };
 
       const handleMove = (e) => {
-        if (!isDragging && !isResizing) return;
+        if (!isDragging) return;
         if (e.cancelable) e.preventDefault();
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
         const deltaY = clientY - startY;
 
-        if (isDragging) {
-          let newStartMin = Math.round((initialTop + deltaY) / 15) * 15;
-          newStartMin = Math.max(0, Math.min(1440 - task.durationMin, newStartMin));
-          task.startMin = newStartMin;
-          el.style.top = `${newStartMin}px`;
-        } else if (isResizing) {
-          let newDuration = Math.round((initialHeight + deltaY) / 15) * 15;
-          newDuration = Math.max(15, newDuration);
-          task.durationMin = newDuration;
-          el.style.height = `${newDuration}px`;
-        }
+        let newStartMin = Math.round((initialTop + deltaY) / 15) * 15;
+        newStartMin = Math.max(0, Math.min(1440 - task.durationMin, newStartMin));
+        task.startMin = newStartMin;
+        el.style.top = `${newStartMin}px`;
 
         const startH = String(Math.floor(task.startMin / 60)).padStart(2, '0');
         const startM = String(task.startMin % 60).padStart(2, '0');
@@ -1185,9 +1422,8 @@
       };
 
       const handleEnd = () => {
-        if (isDragging || isResizing) {
+        if (isDragging) {
           isDragging = false;
-          isResizing = false;
           window.saveData();
         }
         document.removeEventListener('mousemove', handleMove);
