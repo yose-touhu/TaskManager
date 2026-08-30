@@ -129,7 +129,6 @@
     .btn-edit { background-color: #f57c00; color: #fff; }
     .btn-del { background-color: #444; color: #fff; }
 
-    /* ワンタッチテンプレートエリア */
     .template-box {
       background-color: #1a1a1a;
       border: 1px dashed var(--border-color);
@@ -156,7 +155,6 @@
       color: #000;
     }
 
-    /* アナログタイマー */
     .active-container {
       display: flex;
       gap: 16px;
@@ -324,7 +322,6 @@
 </head>
 <body>
 
-  <!-- 認証ステータスバー -->
   <div class="auth-bar">
     <div id="auth-status-text">未ログイン（非同期モード）</div>
     <div>
@@ -333,25 +330,20 @@
     </div>
   </div>
 
-  <!-- タブ切り替えヘッダー -->
   <div class="tab-header">
     <button class="tab-btn active" onclick="switchTab('taskTab', this)">📋 タスク管理</button>
     <button class="tab-btn" onclick="switchTab('timelineTab', this)">⏰ タイムライン</button>
     <button class="tab-btn" onclick="switchTab('historyTab', this)">✅ 完了・ログ</button>
   </div>
 
-  <!-- 【タブ1】タスク管理・実行画面 -->
   <div id="taskTab" class="tab-content active">
     
-    <!-- 実行中テーブル（タイマー計測＆アナログ時計） -->
     <div class="card" style="border: 2px solid var(--accent-color);">
       <h2>🔥 実行中タスク（タスク着手中エリア）</h2>
       <div class="active-container">
-        <!-- アナログ時計表示エリア -->
         <div class="analog-clock-wrapper">
           <canvas id="analogClock" width="100" height="100"></canvas>
         </div>
-        <!-- 実行中テーブル -->
         <div style="flex: 1; min-width: 250px; overflow-x: auto;">
           <table>
             <thead>
@@ -367,14 +359,12 @@
       </div>
     </div>
 
-    <!-- タスク登録エリア ＆ よく使うタスク（ワンタッチ） -->
     <div class="card">
       <h2>
         <span>1. タスク登録（一括入力）</span>
         <button class="btn-edit" style="font-size:0.8rem;" onclick="openTemplateManagerModal()">⚙️ 定型文編集</button>
       </h2>
       
-      <!-- ワンタッチ追加エリア -->
       <div class="template-box">
         <div style="font-size:0.85rem; color:var(--text-sub);">⚡ よく使うタスク（ワンタッチで全自動入力）:</div>
         <div class="template-btns" id="templateBtnsContainer"></div>
@@ -401,7 +391,6 @@
     </div>
   </div>
 
-  <!-- 【タブ2】タイムライン画面 -->
   <div id="timelineTab" class="tab-content">
     <div class="card">
       <h2>未配置の登録タスク（タップで配置）</h2>
@@ -420,7 +409,6 @@
     </div>
   </div>
 
-  <!-- 【タブ3】完了タスク・過去ログ閲覧 -->
   <div id="historyTab" class="tab-content">
     <div class="card">
       <h2>✅ 本日の完了エリア ＆ 過去ログ</h2>
@@ -444,7 +432,6 @@
     </div>
   </div>
 
-  <!-- 定型文（ワンタッチテンプレート）管理モーダル -->
   <div id="templateModal" class="modal-overlay hidden">
     <div class="modal-card">
       <h2>⚙️ 定型タスク（よく使うタスク）編集</h2>
@@ -473,7 +460,6 @@
     </div>
   </div>
 
-  <!-- 編集モーダル -->
   <div id="editModal" class="modal-overlay hidden">
     <div class="modal-card">
       <h2 style="margin-bottom:0;">タスクの編集・詳細</h2>
@@ -506,7 +492,6 @@
     </div>
   </div>
 
-  <!-- 過去ログ閲覧モーダル -->
   <div id="historyModal" class="modal-overlay hidden">
     <div class="modal-card">
       <h2>📅 永久保存版・日々の活動記録</h2>
@@ -530,7 +515,6 @@
     </div>
   </div>
 
-  <!-- Firebase SDK ＆ 全ロジック -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
     import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
@@ -682,7 +666,6 @@
       if (tabId === 'timelineTab') renderTimeline();
     };
 
-    /* --- アナログ時計の描画 --- */
     function drawAnalogClock() {
       const canvas = document.getElementById('analogClock');
       if (!canvas) return;
@@ -724,7 +707,6 @@
       ctx.stroke();
     }
 
-    /* --- 定型テンプレート処理 --- */
     function renderTemplateButtons() {
       const container = document.getElementById('templateBtnsContainer');
       if (!container) return;
@@ -815,7 +797,6 @@
       renderRegisteredTable();
     };
 
-    /* --- 過去ログ閲覧機能 --- */
     window.openHistoryModal = async function() {
       document.getElementById('historyModal').classList.remove('hidden');
       const select = document.getElementById('historyDateSelect');
@@ -932,7 +913,6 @@
       URL.revokeObjectURL(url);
     };
 
-    /* --- 編集モーダル操作 --- */
     window.openEditModal = function(id) {
       editingTaskId = id;
       const task = window.findTaskById(id);
@@ -1091,6 +1071,7 @@
       }
     }
 
+    /* --- 完了処理（タイマー時間記録対応） --- */
     window.completeTask = async function(id) {
       const idx = window.activeTasks.findIndex(t => t.id === id);
       if (idx === -1) return;
@@ -1099,8 +1080,15 @@
       checkTimerState();
 
       const endTime = new Date();
-      const startTime = task.actualStart ? new Date(task.actualStart) : endTime;
-      const durationMins = Math.max(1, Math.round(task.elapsedSec / 60));
+      // タイマーの経過時間(秒)を取得（最低1秒）
+      const totalElapsedSec = Math.max(1, task.elapsedSec || 0);
+      
+      // 開始時刻は、記録されている開始時間か、現在時刻から経過時間分さかのぼった時刻
+      const startTime = task.actualStart 
+        ? new Date(task.actualStart) 
+        : new Date(endTime.getTime() - totalElapsedSec * 1000);
+
+      const durationMins = Math.max(1, Math.round(totalElapsedSec / 60));
       const startMinutes = startTime.getHours() * 60 + startTime.getMinutes();
 
       const completedItem = { 
@@ -1111,7 +1099,7 @@
         checklist: task.checklist || [],
         start: startTime.toISOString(), 
         end: endTime.toISOString(), 
-        durationSec: task.elapsedSec 
+        durationSec: totalElapsedSec 
       };
       
       window.completedTasks.push(completedItem);
@@ -1121,7 +1109,15 @@
         existingTL.isCompleted = true;
         existingTL.durationMin = durationMins;
       } else {
-        window.timelineTasks.push({ id: task.id, name: task.name, startMin: startMinutes, durationMin: durationMins, isCompleted: true, memo: task.memo, checklist: task.checklist });
+        window.timelineTasks.push({ 
+          id: task.id, 
+          name: task.name, 
+          startMin: startMinutes, 
+          durationMin: durationMins, 
+          isCompleted: true, 
+          memo: task.memo, 
+          checklist: task.checklist 
+        });
       }
 
       window.saveData();
@@ -1197,7 +1193,6 @@
       const currentMins = now.getHours() * 60 + Math.floor(now.getMinutes() / 15) * 15;
       const newId = Date.now() + Math.random();
       
-      // 未完了登録リストとタイムラインの両方に追加
       window.registeredTasks.push({
         id: newId,
         name: name,
@@ -1221,14 +1216,12 @@
       renderTimeline();
     };
 
-    /* タイムラインから外して未配置に戻す */
     window.unassignTimelineTask = function(id) {
       window.timelineTasks = window.timelineTasks.filter(t => t.id !== id);
       window.saveData();
       renderTimeline();
     };
 
-    /* タイムライン上から完全削除 */
     window.deleteTimelineTask = function(id) {
       window.timelineTasks = window.timelineTasks.filter(t => t.id !== id);
       window.registeredTasks = window.registeredTasks.filter(t => t.id !== id);
