@@ -112,6 +112,17 @@
       user-select: text;
     }
 
+    /* スマホ・タブレットでカレンダー・時刻入力を押しやすく見やすく調整 */
+    input[type="date"], input[type="time"] {
+      width: 100%;
+      padding: 12px;
+      font-size: 1.1rem;
+      appearance: none;
+      -webkit-appearance: none;
+      background-color: #2c2c2c;
+      color: var(--text-main);
+    }
+
     textarea { width: 100%; height: 80px; resize: vertical; }
 
     button {
@@ -295,9 +306,9 @@
       background-color: var(--card-bg);
       border: 1px solid var(--border-color);
       border-radius: 10px;
-      width: 90%; max-width: 550px;
+      width: 90%; max-width: 480px;
       max-height: 85vh; overflow-y: auto;
-      padding: 16px; display: flex; flex-direction: column; gap: 12px;
+      padding: 18px; display: flex; flex-direction: column; gap: 14px;
     }
 
     .checklist-item {
@@ -341,7 +352,7 @@
     <div class="card" style="border: 2px solid var(--accent-color);">
       <h2>🔥 実行中タスク（タスク着手中エリア）</h2>
       <div style="font-size: 0.8rem; color: var(--text-sub); margin-bottom: 8px;">
-        💡 ヒント: 「完了」ボタンは通常クリックで当日完了、**長押し（またはPCで長めクリック）**すると過去の日付を選んで完了できます！
+        💡 ヒント: 「完了」ボタンは通常クリックで当日完了、**長押し（またはPCで長めクリック）**するとカレンダーから過去の日付を選んで完了できます！
       </div>
       <div class="active-container">
         <div class="analog-clock-wrapper">
@@ -435,22 +446,22 @@
     </div>
   </div>
 
-  <!-- 過去日付での完了選択モーダル -->
+  <!-- 過去日付選択モーダル（ネイティブカレンダー対応） -->
   <div id="completeDateModal" class="modal-overlay hidden">
     <div class="modal-card">
-      <h2>📅 完了日時の指定（過去分として記録）</h2>
-      <p style="font-size:0.85rem; color:var(--text-sub);">
-        押し忘れていた過去の完了日を選んでください。選択した日付のログとして保存されます。
+      <h2>📅 完了日時の指定</h2>
+      <p style="font-size:0.85rem; color:var(--text-sub); line-height:1.4;">
+        押し忘れていた過去の完了日を選択してください。指定した日付のログとして大切に保存されます。
       </p>
       
       <div>
-        <label style="font-size:0.85rem; color:var(--text-sub);">完了日</label>
-        <input type="date" id="pastCompleteDate" style="width:100%; margin-top:4px;">
+        <label style="font-size:0.85rem; color:var(--text-sub); display:block; margin-bottom:4px;">完了日（カレンダーから選択）</label>
+        <input type="date" id="pastCompleteDate">
       </div>
 
       <div>
-        <label style="font-size:0.85rem; color:var(--text-sub);">完了時刻（目安）</label>
-        <input type="time" id="pastCompleteTime" value="23:00" style="width:100%; margin-top:4px;">
+        <label style="font-size:0.85rem; color:var(--text-sub); display:block; margin-bottom:4px;">完了時刻（目安）</label>
+        <input type="time" id="pastCompleteTime" value="23:00">
       </div>
 
       <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:8px;">
@@ -566,7 +577,7 @@
 
     let currentUser = null;
     let unsubscribeSnapshot = null;
-    let targetTaskIdForPastComplete = null; // 長押し完了用の一時保持変数
+    let targetTaskIdForPastComplete = null;
 
     window.registeredTasks = JSON.parse(localStorage.getItem('tb_registered')) || [];
     window.activeTasks = JSON.parse(localStorage.getItem('tb_active')) || [];
@@ -1100,12 +1111,10 @@
       }
     }
 
-    /* --- 通常の完了処理（当日） --- */
     window.completeTask = async function(id) {
       processComplete(id, null, null);
     };
 
-    /* --- 長押し完了用のモーダルを開く --- */
     window.openCompleteDateModal = function(id) {
       targetTaskIdForPastComplete = id;
       document.getElementById('pastCompleteDate').value = getTodayKey();
@@ -1131,7 +1140,6 @@
       targetTaskIdForPastComplete = null;
     };
 
-    /* 共通完了処理ロジック (customEndが指定されれば過去日付、nullなら当日) */
     async function processComplete(id, customEndDate = null, targetDateKey = null) {
       const idx = window.activeTasks.findIndex(t => t.id === id);
       if (idx === -1) return;
@@ -1180,7 +1188,6 @@
 
       window.saveData();
       
-      // 保存先のキー（過去日付を指定された場合はその日付、なければ当日）
       const actualDateKey = targetDateKey || getTodayKey();
       await archiveCompletedTaskToFirestore(completedItem, actualDateKey);
 
@@ -1364,18 +1371,15 @@
         toggleBtn.onclick = () => toggleTimer(t.id);
         tdBtns.appendChild(toggleBtn);
 
-        // 完了ボタン（クリック＝当日完了、長押し＝過去日付選択モーダル）
         const completeBtn = document.createElement('button');
         completeBtn.className = 'btn-add';
         completeBtn.textContent = '完了';
         completeBtn.style.marginLeft = '4px';
         
-        // 通常クリック（短押し完了）
         completeBtn.onclick = () => {
           if (!isLongPressed) completeTask(t.id);
         };
 
-        // 長押し検知用の変数
         let pressTimer = null;
         let isLongPressed = false;
 
@@ -1384,7 +1388,7 @@
           pressTimer = setTimeout(() => {
             isLongPressed = true;
             openCompleteDateModal(t.id);
-          }, 700); // 0.7秒長押しで発動
+          }, 700);
         };
 
         const cancelPress = () => {
