@@ -101,7 +101,7 @@
       gap: 8px;
     }
 
-    input[type="text"], input[type="date"], select, textarea {
+    input[type="text"], select, textarea {
       background-color: #2c2c2c;
       border: 1px solid var(--border-color);
       color: var(--text-main);
@@ -432,21 +432,6 @@
     </div>
   </div>
 
-  <!-- 日付選択完了モーダル -->
-  <div id="completeDateModal" class="modal-overlay hidden">
-    <div class="modal-card">
-      <h2>📅 完了日を選択</h2>
-      <div>
-        <label style="font-size:0.85rem; color:var(--text-sub);">記録する完了日付を選んでください:</label>
-        <input type="date" id="customCompleteDate" style="width:100%; margin-top:6px;">
-      </div>
-      <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:12px;">
-        <button class="btn-del" onclick="closeCompleteDateModal()">キャンセル</button>
-        <button class="btn-add" onclick="confirmCustomDateCompletion()">この日付で完了する</button>
-      </div>
-    </div>
-  </div>
-
   <div id="templateModal" class="modal-overlay hidden">
     <div class="modal-card">
       <h2>⚙️ 定型タスク（よく使うタスク）編集</h2>
@@ -530,7 +515,7 @@
     </div>
   </div>
 
-    <script type="module">
+  <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
     import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
     import { getFirestore, doc, setDoc, getDoc, collection, getDocs, onSnapshot, arrayUnion } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
@@ -553,7 +538,6 @@
 
     let currentUser = null;
     let unsubscribeSnapshot = null;
-    let pendingCompleteTaskId = null;
 
     window.registeredTasks = JSON.parse(localStorage.getItem('tb_registered')) || [];
     window.activeTasks = JSON.parse(localStorage.getItem('tb_active')) || [];
@@ -564,6 +548,7 @@
     ];
 
     window.timerInterval = null;
+    let editingTaskId = null;
 
     const loginBtn = document.getElementById('login-btn');
     const logoutBtn = document.getElementById('logout-btn');
@@ -621,13 +606,13 @@
       }
     };
 
-    async function archiveCompletedTaskToFirestore(completedTaskItem, customDateKey = null) {
+    async function archiveCompletedTaskToFirestore(completedTaskItem) {
       if (!currentUser) return;
       try {
-        const targetDateKey = customDateKey || getTodayKey();
-        const logDocRef = doc(db, "users", currentUser.uid, "daily_logs", targetDateKey);
+        const todayKey = getTodayKey();
+        const logDocRef = doc(db, "users", currentUser.uid, "daily_logs", todayKey);
         await setDoc(logDocRef, {
-          date: targetDateKey,
+          date: todayKey,
           tasks: arrayUnion(completedTaskItem),
           updatedAt: new Date().toISOString()
         }, { merge: true });
@@ -657,469 +642,195 @@
 
           renderAll();
         }
+      }, (error) => {
+        console.error("Firestore同期エラー:", error);
       });
     }
 
-    // タブ切り替え
+    function renderAll() {
+      renderTemplateButtons();
+      renderRegisteredTable();
+      renderActiveTable();
+      renderHistoryTable();
+      drawAnalogClock();
+      if (document.getElementById('timelineTab').classList.contains('active')) {
+        renderTimeline();
+      }
+    }
+
     window.switchTab = function(tabId, btn) {
-      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
       document.getElementById(tabId).classList.add('active');
       btn.classList.add('active');
       if (tabId === 'timelineTab') renderTimeline();
     };
 
-    // タスク完了処理（指定日付にも対応）
-    window.completeActiveTask = function(taskId, customDateStr = null) {
-      const index = window.activeTasks.findIndex(t => t.id === taskId);
-      if (index === -1) return;
+    function drawAnalogClock() {
+      const canvas = document.getElementById('analogClock');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const radius = canvas.width / 2;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      const task = window.activeTasks[index];
-      const now = new Date();
-      let dateKey = getTodayKey();
+      ctx.beginPath();
+      ctx.arc(radius, radius, radius - 4, 0, 2 * Math.PI);
+      ctx.fillStyle = '#1e1e1e';
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#29b6f6';
+      ctx.stroke();
 
-      if (customDateStr) {
-        dateKey = customDateStr;
-      }
+      const runningTask = window.activeTasks.find(t => t.isRunning) || window.activeTasks[0];
+      const elapsedSec = runningTask ? runningTask.elapsedSec : 0;
 
-      const completedItem = {
-        ...task,
-        completedAt: now.toISOString(),
-        completedDate: dateKey,
-        elapsedSeconds: task.elapsedSeconds || 0
-      };
+      let elapsedMins = (elapsedSec / 60) % 60;
+      let endAngle = (elapsedMins / 60) * 2 * Math.PI - (Math.PI / 2);
+      ctx.beginPath();
+      ctx.moveTo(radius, radius);
+      ctx.arc(radius, radius, radius - 6, -Math.PI / 2, endAngle, false);
+      ctx.fillStyle = 'rgba(41, 182, 246, 0.3)';
+      ctx.fill();
 
-      window.completedTasks.unshift(completedItem);
-      window.activeTasks.splice(index, 1);
-
-      // タイムライン上の該当タスクも完了にする
-      const tlTask = window.timelineTasks.find(t => t.id === taskId);
-      if (tlTask) tlTask.completed = true;
-
-      window.saveData();
-      archiveCompletedTaskToFirestore(completedItem, dateKey);
-      renderAll();
-    };
-
-    // 長押し＆クリック判定イベントの登録用関数
-    window.attachHoldCompleteEvent = function(buttonElement, taskId) {
-      let holdTimer = null;
-      let isLongPress = false;
-
-      const startHold = (e) => {
-        isLongPress = false;
-        holdTimer = setTimeout(() => {
-          isLongPress = true;
-          window.openCompleteDateModal(taskId);
-        }, 600); // 0.6秒長押しで日付選択モーダル起動
-      };
-
-      const cancelHold = () => {
-        if (holdTimer) clearTimeout(holdTimer);
-      };
-
-      const handleClick = (e) => {
-        e.preventDefault();
-        if (!isLongPress) {
-          window.completeActiveTask(taskId);
-        }
-      };
-
-      buttonElement.addEventListener('mousedown', startHold);
-      buttonElement.addEventListener('touchstart', startHold, { passive: true });
-      buttonElement.addEventListener('mouseup', cancelHold);
-      buttonElement.addEventListener('mouseleave', cancelHold);
-      buttonElement.addEventListener('touchend', cancelHold);
-      buttonElement.addEventListener('click', handleClick);
-    };
-
-    // 日付指定完了モーダルの操作
-    window.openCompleteDateModal = function(taskId) {
-      pendingCompleteTaskId = taskId;
-      const modal = document.getElementById('completeDateModal');
-      const dateInput = document.getElementById('customCompleteDate');
-      dateInput.value = getTodayKey();
-      modal.classList.remove('hidden');
-    };
-
-    window.closeCompleteDateModal = function() {
-      pendingCompleteTaskId = null;
-      document.getElementById('completeDateModal').classList.add('hidden');
-    };
-
-    window.confirmCustomDateCompletion = function() {
-      const dateInput = document.getElementById('customCompleteDate');
-      if (!dateInput.value) {
-        alert("日付を選択してください。");
-        return;
-      }
-      if (pendingCompleteTaskId) {
-        window.completeActiveTask(pendingCompleteTaskId, dateInput.value);
-        window.closeCompleteDateModal();
-      }
-    };
-
-    // 一括登録
-    window.addBulkTasks = function() {
-      const text = document.getElementById('bulkInput').value.trim();
-      if (!text) return;
-
-      const lines = text.split('\n');
-      lines.forEach(line => {
-        if (!line.trim()) return;
-        const parts = line.split(/[,，]/);
-        const title = parts[0].trim();
-        const est = parts[1] ? parseInt(parts[1].trim(), 10) || 30 : 30;
-
-        if (title) {
-          window.registeredTasks.push({
-            id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
-            title: title,
-            est: est,
-            checklist: [],
-            memo: '',
-            elapsedSeconds: 0
-          });
-        }
-      });
-
-      document.getElementById('bulkInput').value = '';
-      window.saveData();
-      renderAll();
-    };
-
-    // 着手待ちから実行中に移動
-    window.startTask = function(taskId) {
-      const index = window.registeredTasks.findIndex(t => t.id === taskId);
-      if (index === -1) return;
-
-      const task = window.registeredTasks[index];
-      task.startTime = new Date().toISOString();
-      task.isPaused = false;
-
-      window.activeTasks.push(task);
-      window.registeredTasks.splice(index, 1);
-
-      window.saveData();
-      renderAll();
-    };
-
-    // タイマーの 一時停止 / 再開
-    window.togglePauseTimer = function(taskId) {
-      const task = window.activeTasks.find(t => t.id === taskId);
-      if (!task) return;
-
-      task.isPaused = !task.isPaused;
-      window.saveData();
-      renderAll();
-    };
-
-    // 描画メイン処理
-    function renderAll() {
-      renderActiveTasks();
-      renderRegisteredTasks();
-      renderCompletedTasks();
-      renderTemplates();
-      renderUnassignedPool();
+      let secAngle = ((elapsedSec % 60) / 60) * 2 * Math.PI - (Math.PI / 2);
+      drawClockHand(ctx, radius, radius, secAngle, radius - 12, 1.5, '#ff5252');
+      drawClockHand(ctx, radius, radius, endAngle, radius - 20, 3, '#29b6f6');
     }
 
-    function formatTime(seconds) {
-      const m = Math.floor(seconds / 60);
-      const s = seconds % 60;
-      return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    function drawClockHand(ctx, cx, cy, angle, length, width, color) {
+      ctx.beginPath();
+      ctx.lineWidth = width;
+      ctx.lineCap = "round";
+      ctx.strokeStyle = color;
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + length * Math.cos(angle), cy + length * Math.sin(angle));
+      ctx.stroke();
     }
 
-    function renderActiveTasks() {
-      const tbody = document.getElementById('activeTableBody');
-      tbody.innerHTML = '';
-
-      window.activeTasks.forEach(task => {
-        const tr = document.createElement('tr');
-        const elapsed = task.elapsedSeconds || 0;
-
-        tr.innerHTML = `
-          <td>
-            <div>${task.title} (予定:${task.est}分)</div>
-            <div class="task-sub-info">${task.memo ? '📝 ' + task.memo : ''}</div>
-          </td>
-          <td class="timer-text" id="timer-${task.id}">${formatTime(elapsed)}</td>
-          <td>
-            <div class="btn-group-mini">
-              <button class="${task.isPaused ? 'btn-start' : 'btn-stop'}" onclick="togglePauseTimer('${task.id}')">
-                ${task.isPaused ? '再開' : '一時停止'}
-              </button>
-              <button class="btn-add complete-btn-hold" id="complete-btn-${task.id}">完了</button>
-            </div>
-          </td>
-        `;
-
-        tbody.appendChild(tr);
-
-        // イベントリスナーの動的付与（長押しで日付指定）
-        const completeBtn = tr.querySelector(`#complete-btn-${task.id}`);
-        if (completeBtn) {
-          window.attachHoldCompleteEvent(completeBtn, task.id);
-        }
-      });
-    }
-
-    function renderRegisteredTasks() {
-      const tbody = document.getElementById('registeredTableBody');
-      tbody.innerHTML = '';
-
-      window.registeredTasks.forEach((task, idx) => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td>${task.title}</td>
-          <td>${task.est}</td>
-          <td>
-            <div class="btn-group-mini">
-              <button class="btn-start" onclick="startTask('${task.id}')">着手</button>
-              <button class="btn-del" onclick="deleteRegisteredTask(${idx})">削除</button>
-            </div>
-          </td>
-        `;
-        tbody.appendChild(tr);
-      });
-    }
-
-    function renderCompletedTasks() {
-      const tbody = document.getElementById('historyTableBody');
-      tbody.innerHTML = '';
-
-      window.completedTasks.forEach(task => {
-        const tr = document.createElement('tr');
-        const startDate = task.startTime ? new Date(task.startTime) : null;
-        const endDate = task.completedAt ? new Date(task.completedAt) : null;
-
-        const startStr = startDate ? `${startDate.getHours()}:${String(startDate.getMinutes()).padStart(2, '0')}` : '-';
-        const endStr = endDate ? `${endDate.getHours()}:${String(endDate.getMinutes()).padStart(2, '0')}` : '-';
-        const displayDate = task.completedDate ? ` [${task.completedDate}]` : '';
-
-        tr.innerHTML = `
-          <td>${task.title}${displayDate}</td>
-          <td>${startStr}</td>
-          <td>${endStr}</td>
-          <td>${Math.round((task.elapsedSeconds || 0) / 60)}分</td>
-          <td>
-            <button class="btn-del" onclick="removeCompletedTask('${task.id}')">削除</button>
-          </td>
-        `;
-        tbody.appendChild(tr);
-      });
-    }
-
-    window.removeCompletedTask = function(taskId) {
-      window.completedTasks = window.completedTasks.filter(t => t.id !== taskId);
-      window.saveData();
-      renderAll();
-    };
-
-    window.deleteRegisteredTask = function(index) {
-      window.registeredTasks.splice(index, 1);
-      window.saveData();
-      renderAll();
-    };
-
-    window.clearCompletedScreenOnly = function() {
-      if (confirm("画面上の完了リストをクリアしますか？（クラウド保存済みのログは消えません）")) {
-        window.completedTasks = [];
-        window.saveData();
-        renderAll();
-      }
-    };
-
-    // タイマーカウントループ
-    setInterval(() => {
-      window.activeTasks.forEach(task => {
-        if (!task.isPaused) {
-          task.elapsedSeconds = (task.elapsedSeconds || 0) + 1;
-          const el = document.getElementById(`timer-${task.id}`);
-          if (el) el.textContent = formatTime(task.elapsedSeconds);
-        }
-      });
-    }, 1000);
-
-    // 定型タスク・テンプレート機能
-    function renderTemplates() {
+    function renderTemplateButtons() {
       const container = document.getElementById('templateBtnsContainer');
+      if (!container) return;
       container.innerHTML = '';
-
       window.taskTemplates.forEach(tpl => {
         const btn = document.createElement('button');
         btn.className = 'btn-template';
-        btn.textContent = `＋ ${tpl.title} (${tpl.est}分)`;
-        btn.onclick = () => addTemplateTask(tpl);
+        btn.textContent = `＋ ${tpl.title}`;
+        btn.onclick = () => applyTemplateToInput(tpl);
         container.appendChild(btn);
       });
     }
 
-    function addTemplateTask(tpl) {
-      const checklist = tpl.sub ? tpl.sub.split('\n').filter(s => s.trim()).map(item => ({ text: item.trim(), done: false })) : [];
+    function applyTemplateToInput(tpl) {
+      const checklistItems = tpl.sub ? tpl.sub.split('\n').filter(s => s.trim()).map(s => ({ text: s.trim(), done: false })) : [];
       window.registeredTasks.push({
-        id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
-        title: tpl.title,
-        est: tpl.est,
-        checklist: checklist,
-        memo: '',
-        elapsedSeconds: 0
+        id: Date.now() + Math.random(),
+        name: tpl.title,
+        est: parseInt(tpl.est, 10) || 30,
+        memo: "",
+        checklist: checklistItems
       });
       window.saveData();
-      renderAll();
+      renderRegisteredTable();
     }
 
-    // 定型管理モーダル
     window.openTemplateManagerModal = function() {
       document.getElementById('templateModal').classList.remove('hidden');
-      renderTemplateManageList();
+      renderTemplateManagerList();
     };
 
     window.closeTemplateManagerModal = function() {
       document.getElementById('templateModal').classList.add('hidden');
     };
 
-    function renderTemplateManageList() {
-      const list = document.getElementById('templateManageList');
-      list.innerHTML = '';
-
-      window.taskTemplates.forEach((tpl, idx) => {
-        const div = document.createElement('div');
-        div.style.cssText = 'display:flex; justify-content:space-between; align-items:center; margin-top:4px; font-size:0.9rem;';
-        div.innerHTML = `
-          <span>${tpl.title} (${tpl.est}分)</span>
-          <button class="btn-del" style="padding:2px 6px; font-size:0.75rem;" onclick="deleteTemplate(${idx})">削除</button>
-        `;
-        list.appendChild(div);
-      });
-    }
-
     window.saveTemplateFromModal = function() {
       const title = document.getElementById('tplTitleInput').value.trim();
-      const est = parseInt(document.getElementById('tplEstInput').value.trim(), 10) || 30;
+      const est = document.getElementById('tplEstInput').value.trim();
       const sub = document.getElementById('tplSubInput').value.trim();
-
       if (!title) return;
 
-      window.taskTemplates.push({
-        id: Date.now().toString(),
-        title, est, sub
-      });
-
+      window.taskTemplates.push({ id: Date.now().toString(), title, est, sub });
       document.getElementById('tplTitleInput').value = '';
       document.getElementById('tplSubInput').value = '';
-
       window.saveData();
-      renderTemplates();
-      renderTemplateManageList();
+      renderTemplateButtons();
+      renderTemplateManagerList();
     };
 
-    window.deleteTemplate = function(idx) {
-      window.taskTemplates.splice(idx, 1);
+    window.deleteTemplate = function(id) {
+      window.taskTemplates = window.taskTemplates.filter(t => t.id !== id);
       window.saveData();
-      renderTemplates();
-      renderTemplateManageList();
+      renderTemplateButtons();
+      renderTemplateManagerList();
     };
 
-    // タイムライン関連
-    function renderUnassignedPool() {
-      const pool = document.getElementById('unassignedPool');
-      pool.innerHTML = '';
-
-      window.registeredTasks.forEach(task => {
-        const div = document.createElement('div');
-        div.className = 'pool-item';
-        div.textContent = `${task.title} (${task.est}分)`;
-        div.onclick = () => assignTaskToTimeline(task);
-        pool.appendChild(div);
-      });
-    }
-
-    function assignTaskToTimeline(task) {
-      const existing = window.timelineTasks.find(t => t.id === task.id);
-      if (!existing) {
-        window.timelineTasks.push({
-          ...task,
-          startHour: 9,
-          completed: false
-        });
-        window.saveData();
-        renderTimeline();
-      }
-    }
-
-    function renderTimeline() {
-      const grid = document.getElementById('timelineGrid');
-      const container = document.getElementById('timelineTasksContainer');
-      grid.innerHTML = '';
+    function renderTemplateManagerList() {
+      const container = document.getElementById('templateManageList');
       container.innerHTML = '';
-
-      for (let h = 0; h < 24; h++) {
-        const slot = document.createElement('div');
-        slot.className = 'time-slot';
-        slot.innerHTML = `<div class="time-label">${String(h).padStart(2, '0')}:00</div><div class="time-lane"></div>`;
-        grid.appendChild(slot);
-      }
-
-      window.timelineTasks.forEach(task => {
-        const item = document.createElement('div');
-        item.className = `draggable-task ${task.completed ? 'completed' : ''}`;
-        item.style.top = `${(task.startHour || 0) * 60}px`;
-        item.style.height = `${Math.max((task.est || 30), 30)}px`;
-
-        item.innerHTML = `
-          <span>${task.title}</span>
-          <div class="btn-group-mini">
-            <button class="btn-del" onclick="removeFromTimeline('${task.id}')">✕</button>
-          </div>
-        `;
-
-        container.appendChild(item);
+      window.taskTemplates.forEach(t => {
+        const div = document.createElement('div');
+        div.style.cssText = 'display:flex; justify-content:space-between; align-items:center; margin-top:6px; background:#111; padding:6px 10px; border-radius:4px;';
+        div.innerHTML = `<span><strong>${escapeHtml(t.title)}</strong> (${t.est}分)</span>
+          <button class="btn-del" style="padding:2px 6px; font-size:0.75rem;" onclick="deleteTemplate('${t.id}')">削除</button>`;
+        container.appendChild(div);
       });
     }
 
-    window.removeFromTimeline = function(taskId) {
-      window.timelineTasks = window.timelineTasks.filter(t => t.id !== taskId);
+    window.addBulkTasks = function() {
+      const text = document.getElementById('bulkInput').value.trim();
+      if (!text) return;
+      const lines = text.split('\n');
+      lines.forEach(line => {
+        if (!line.trim()) return;
+        const parts = line.split(/[,，]/);
+        const name = parts[0].trim();
+        const est = parts[1] ? parseInt(parts[1].trim(), 10) || 15 : 15;
+        window.registeredTasks.push({ 
+          id: Date.now() + Math.random(), 
+          name: name, 
+          est: est,
+          memo: "",
+          checklist: []
+        });
+      });
+      document.getElementById('bulkInput').value = '';
       window.saveData();
-      renderTimeline();
+      renderRegisteredTable();
     };
 
-    window.addQuickTimelineTask = function() {
-      const title = prompt("クイックタスク名を入力:");
-      if (!title) return;
-
-      const newTask = {
-        id: Date.now().toString(),
-        title: title,
-        est: 30,
-        startHour: 10,
-        completed: false
-      };
-
-      window.timelineTasks.push(newTask);
-      window.saveData();
-      renderTimeline();
-    };
-
-        // ログ履歴モーダル
     window.openHistoryModal = async function() {
       document.getElementById('historyModal').classList.remove('hidden');
       const select = document.getElementById('historyDateSelect');
-      select.innerHTML = '<option value="">日付を選択してください</option>';
+      select.innerHTML = '<option value="">読み込み中...</option>';
 
-      if (currentUser) {
-        try {
-          const colRef = collection(db, "users", currentUser.uid, "daily_logs");
-          const querySnapshot = await getDocs(colRef);
-          querySnapshot.forEach(docSnap => {
-            const date = docSnap.id;
-            const opt = document.createElement('option');
-            opt.value = date;
-            opt.textContent = date;
-            select.appendChild(opt);
-          });
-        } catch (e) {
-          console.error("履歴取得エラー:", e);
+      if (!currentUser) {
+        select.innerHTML = `<option value="${getTodayKey()}">${getTodayKey()} (本日・ローカル保存)</option>`;
+        loadHistoryLogByDate(getTodayKey());
+        return;
+      }
+
+      try {
+        const querySnapshot = await getDocs(collection(db, "users", currentUser.uid, "daily_logs"));
+        const dates = [];
+        querySnapshot.forEach(doc => dates.push(doc.id));
+        dates.sort().reverse();
+
+        if (!dates.includes(getTodayKey())) {
+          dates.unshift(getTodayKey());
         }
+
+        select.innerHTML = '<option value="">日付を選択してください</option>';
+        dates.forEach(d => {
+          const opt = document.createElement('option');
+          opt.value = d;
+          opt.textContent = d === getTodayKey() ? `${d} (本日)` : d;
+          select.appendChild(opt);
+        });
+
+        select.value = getTodayKey();
+        loadHistoryLogByDate(getTodayKey());
+      } catch (e) {
+        console.error("履歴取得エラー:", e);
+        select.innerHTML = '<option value="">エラーが発生しました</option>';
       }
     };
 
@@ -1127,10 +838,644 @@
       document.getElementById('historyModal').classList.add('hidden');
     };
 
-    window.loadHistoryLogByDate = async function(dateKey) {
+    window.loadHistoryLogByDate = async function(dateStr) {
       const display = document.getElementById('historyLogDisplay');
-      if (!dateKey)
+      if (!dateStr) {
+        display.textContent = '日付を選択してください。';
+        return;
+      }
 
+      display.textContent = '読み込み中...';
+      let tasks = [];
 
-    
-       
+      if (currentUser) {
+        try {
+          const docSnap = await getDoc(doc(db, "users", currentUser.uid, "daily_logs", dateStr));
+          if (docSnap.exists()) {
+            tasks = docSnap.data().tasks || [];
+          } else if (dateStr === getTodayKey()) {
+            tasks = window.completedTasks;
+          }
+        } catch (e) {
+          console.error("日別ログ読み込みエラー:", e);
+        }
+      } else if (dateStr === getTodayKey()) {
+        tasks = window.completedTasks;
+      }
+
+      if (tasks.length === 0) {
+        display.textContent = `【${dateStr}】\n保存された完了タスク記録はありません。`;
+        return;
+      }
+
+      const lines = tasks.map(t => {
+        const startObj = new Date(t.start);
+        const endObj = new Date(t.end);
+        const startStr = startObj.toTimeString().substring(0, 5);
+        const endStr = endObj.toTimeString().substring(0, 5);
+        const durMins = Math.round(t.durationSec / 60);
+        return `[${startStr} - ${endStr}] ${t.name} (${durMins}分)`;
+      });
+
+      display.textContent = `--- ${dateStr} 完了タスク記録 ---\n` + lines.join('\n');
+    };
+
+    window.copyHistoryLog = function() {
+      const text = document.getElementById('historyLogDisplay').textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        alert("ログをクリップボードにコピーしました！");
+      }).catch(err => {
+        alert("コピーに失敗しました: " + err);
+      });
+    };
+
+    window.downloadCompletedTasks = function() {
+      if (!window.completedTasks || window.completedTasks.length === 0) {
+        alert("現在画面に表示されている完了タスクがありません。");
+        return;
+      }
+      const lines = window.completedTasks.map(t => {
+        const startObj = new Date(t.start);
+        const endObj = new Date(t.end);
+        const startStr = startObj.toTimeString().substring(0, 5);
+        const endStr = endObj.toTimeString().substring(0, 5);
+        const durMins = Math.round(t.durationSec / 60);
+        return `[${startStr} - ${endStr}] ${t.name} (${durMins}分)`;
+      });
+
+      const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
+      const blob = new Blob([bom, lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `completed_tasks_${getTodayKey()}.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
+    };
+
+    window.openEditModal = function(id) {
+      editingTaskId = id;
+      const task = window.findTaskById(id);
+      if (!task) return;
+
+      document.getElementById('modalName').value = task.name || '';
+      document.getElementById('modalEst').value = task.est || task.durationMin || 15;
+      document.getElementById('modalMemo').value = task.memo || '';
+
+      const container = document.getElementById('modalChecklistContainer');
+      container.innerHTML = '';
+      (task.checklist || []).forEach(item => {
+        window.addModalChecklistItem(item.text, item.done);
+      });
+
+      document.getElementById('editModal').classList.remove('hidden');
+    };
+
+    window.closeEditModal = function() {
+      document.getElementById('editModal').classList.add('hidden');
+      editingTaskId = null;
+    };
+
+    window.addModalChecklistItem = function(text = '', done = false) {
+      const container = document.getElementById('modalChecklistContainer');
+      const div = document.createElement('div');
+      div.className = 'checklist-item';
+      div.innerHTML = `
+        <input type="checkbox" ${done ? 'checked' : ''}>
+        <input type="text" value="${escapeHtml(text)}" placeholder="工程を入力">
+        <button class="btn-del" onclick="this.parentElement.remove()" style="padding:4px 8px;">✕</button>
+      `;
+      container.appendChild(div);
+    };
+
+    window.saveModalChanges = function() {
+      if (!editingTaskId) return;
+      const task = window.findTaskById(editingTaskId);
+      if (!task) return;
+
+      task.name = document.getElementById('modalName').value.trim() || task.name;
+      const estVal = parseInt(document.getElementById('modalEst').value, 10) || 15;
+      if (task.est !== undefined) task.est = estVal;
+      if (task.durationMin !== undefined) task.durationMin = estVal;
+      task.memo = document.getElementById('modalMemo').value.trim();
+
+      const items = [];
+      document.querySelectorAll('#modalChecklistContainer .checklist-item').forEach(div => {
+        const chk = div.querySelector('input[type="checkbox"]').checked;
+        const txt = div.querySelector('input[type="text"]').value.trim();
+        if (txt) items.push({ text: txt, done: chk });
+      });
+      task.checklist = items;
+
+      const tlTask = window.timelineTasks.find(t => t.id === editingTaskId);
+      if (tlTask) {
+        tlTask.name = task.name;
+        tlTask.memo = task.memo;
+        tlTask.checklist = task.checklist;
+        tlTask.durationMin = estVal;
+      }
+
+      window.saveData();
+      window.closeEditModal();
+      renderAll();
+    };
+
+    window.findTaskById = function(id) {
+      return window.registeredTasks.find(t => t.id === id) ||
+             window.activeTasks.find(t => t.id === id) ||
+             window.timelineTasks.find(t => t.id === id);
+    };
+
+    window.toggleChecklistItem = function(taskId, itemIndex) {
+      const task = window.findTaskById(taskId);
+      if (task && task.checklist && task.checklist[itemIndex]) {
+        task.checklist[itemIndex].done = !task.checklist[itemIndex].done;
+        window.saveData();
+        renderAll();
+      }
+    };
+
+    window.deleteRegistered = function(id) {
+      window.registeredTasks = window.registeredTasks.filter(t => t.id !== id);
+      window.saveData();
+      renderRegisteredTable();
+    };
+
+    window.startTaskFromList = function(id) {
+      const idx = window.registeredTasks.findIndex(t => t.id === id);
+      if (idx === -1) return;
+      const task = window.registeredTasks.splice(idx, 1)[0];
+      window.activeTasks.push({ 
+        id: task.id, 
+        name: task.name, 
+        est: task.est, 
+        memo: task.memo || "",
+        checklist: task.checklist || [],
+        elapsedSec: 0, 
+        isRunning: false, 
+        actualStart: null 
+      });
+      window.saveData();
+      renderRegisteredTable();
+      renderActiveTable();
+      drawAnalogClock();
+    };
+
+    window.returnToRegistered = function(id) {
+      const idx = window.activeTasks.findIndex(t => t.id === id);
+      if (idx === -1) return;
+      const task = window.activeTasks.splice(idx, 1)[0];
+      task.isRunning = false;
+      checkTimerState();
+
+      window.registeredTasks.push({
+        id: task.id,
+        name: task.name,
+        est: task.est,
+        memo: task.memo || "",
+        checklist: task.checklist || []
+      });
+
+      window.saveData();
+      renderRegisteredTable();
+      renderActiveTable();
+      drawAnalogClock();
+    };
+
+    window.toggleTimer = function(id) {
+      const task = window.activeTasks.find(t => t.id === id);
+      if (!task) return;
+      if (task.isRunning) {
+        task.isRunning = false;
+      } else {
+        window.activeTasks.forEach(t => t.isRunning = false);
+        task.isRunning = true;
+        if (!task.actualStart) task.actualStart = new Date().toISOString();
+      }
+      checkTimerState();
+      window.saveData();
+      renderActiveTable();
+    };
+
+    function checkTimerState() {
+      const anyRunning = window.activeTasks.some(t => t.isRunning);
+      if (anyRunning && !window.timerInterval) {
+        window.timerInterval = setInterval(() => {
+          window.activeTasks.forEach(t => { if (t.isRunning) t.elapsedSec++; });
+          renderActiveTable();
+          drawAnalogClock();
+        }, 1000);
+      } else if (!anyRunning && window.timerInterval) {
+        clearInterval(window.timerInterval);
+        window.timerInterval = null;
+      }
+    }
+
+    /* --- 完了処理（タイマー時間記録対応） --- */
+    window.completeTask = async function(id) {
+      const idx = window.activeTasks.findIndex(t => t.id === id);
+      if (idx === -1) return;
+      const task = window.activeTasks.splice(idx, 1)[0];
+      task.isRunning = false;
+      checkTimerState();
+
+      const endTime = new Date();
+      // タイマーの経過時間(秒)を取得（最低1秒）
+      const totalElapsedSec = Math.max(1, task.elapsedSec || 0);
+      
+      // 開始時刻は、記録されている開始時間か、現在時刻から経過時間分さかのぼった時刻
+      const startTime = task.actualStart 
+        ? new Date(task.actualStart) 
+        : new Date(endTime.getTime() - totalElapsedSec * 1000);
+
+      const durationMins = Math.max(1, Math.round(totalElapsedSec / 60));
+      const startMinutes = startTime.getHours() * 60 + startTime.getMinutes();
+
+      const completedItem = { 
+        id: task.id, 
+        name: task.name, 
+        est: task.est || durationMins,
+        memo: task.memo || "",
+        checklist: task.checklist || [],
+        start: startTime.toISOString(), 
+        end: endTime.toISOString(), 
+        durationSec: totalElapsedSec 
+      };
+      
+      window.completedTasks.push(completedItem);
+
+      const existingTL = window.timelineTasks.find(t => t.id === task.id);
+      if (existingTL) {
+        existingTL.isCompleted = true;
+        existingTL.durationMin = durationMins;
+      } else {
+        window.timelineTasks.push({ 
+          id: task.id, 
+          name: task.name, 
+          startMin: startMinutes, 
+          durationMin: durationMins, 
+          isCompleted: true, 
+          memo: task.memo, 
+          checklist: task.checklist 
+        });
+      }
+
+      window.saveData();
+      await archiveCompletedTaskToFirestore(completedItem);
+
+      renderActiveTable();
+      renderHistoryTable();
+      drawAnalogClock();
+    };
+
+    window.restoreFromCompleted = function(id) {
+      const idx = window.completedTasks.findIndex(t => t.id === id);
+      if (idx === -1) return;
+      const task = window.completedTasks.splice(idx, 1)[0];
+
+      const tlTask = window.timelineTasks.find(t => t.id === id);
+      if (tlTask) {
+        tlTask.isCompleted = false;
+      }
+
+      window.registeredTasks.push({
+        id: task.id,
+        name: task.name,
+        est: task.est || Math.round((task.durationSec || 60) / 60),
+        memo: task.memo || "",
+        checklist: task.checklist || []
+      });
+
+      window.saveData();
+      renderRegisteredTable();
+      renderHistoryTable();
+      if (document.getElementById('timelineTab').classList.contains('active')) {
+        renderTimeline();
+      }
+    };
+
+    window.deleteHistory = function(id) {
+      window.completedTasks = window.completedTasks.filter(t => t.id !== id);
+      window.timelineTasks = window.timelineTasks.filter(t => t.id !== id);
+      window.saveData();
+      renderHistoryTable();
+    };
+
+    window.clearCompletedScreenOnly = function() {
+      if (window.completedTasks.length === 0) return;
+      if (confirm("画面上の完了タスク表示を削除して一覧をきれいにしますか？\n（※クラウドに保存された日々の過去ログは消えませんのでご安心ください）")) {
+        window.completedTasks = [];
+        window.saveData();
+        renderHistoryTable();
+      }
+    };
+
+    window.assignTaskToTimeline = function(task) {
+      const now = new Date();
+      const currentMins = now.getHours() * 60 + Math.floor(now.getMinutes() / 15) * 15;
+      window.timelineTasks.push({ 
+        id: task.id, 
+        name: task.name, 
+        startMin: currentMins, 
+        durationMin: task.est || 30, 
+        isCompleted: false,
+        memo: task.memo || "",
+        checklist: task.checklist || []
+      });
+      window.saveData();
+      renderTimeline();
+    };
+
+    window.addQuickTimelineTask = function() {
+      const name = prompt('タスク名を入力してください:', '新規タスク');
+      if (!name) return;
+      const now = new Date();
+      const currentMins = now.getHours() * 60 + Math.floor(now.getMinutes() / 15) * 15;
+      const newId = Date.now() + Math.random();
+      
+      window.registeredTasks.push({
+        id: newId,
+        name: name,
+        est: 30,
+        memo: "",
+        checklist: []
+      });
+
+      window.timelineTasks.push({ 
+        id: newId, 
+        name: name, 
+        startMin: currentMins, 
+        durationMin: 30, 
+        isCompleted: false,
+        memo: "",
+        checklist: []
+      });
+
+      window.saveData();
+      renderRegisteredTable();
+      renderTimeline();
+    };
+
+    window.unassignTimelineTask = function(id) {
+      window.timelineTasks = window.timelineTasks.filter(t => t.id !== id);
+      window.saveData();
+      renderTimeline();
+    };
+
+    window.deleteTimelineTask = function(id) {
+      window.timelineTasks = window.timelineTasks.filter(t => t.id !== id);
+      window.registeredTasks = window.registeredTasks.filter(t => t.id !== id);
+      window.saveData();
+      renderRegisteredTable();
+      renderTimeline();
+    };
+
+    function generateSubInfoHtml(task) {
+      let html = '';
+      if (task.memo) {
+        const formattedMemo = escapeHtml(task.memo).replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" style="color:var(--accent-color);">${1}</a>');
+        html += `<div class="task-sub-info">📝 ${formattedMemo}</div>`;
+      }
+      if (task.checklist && task.checklist.length > 0) {
+        const doneCount = task.checklist.filter(c => c.done).length;
+        html += `<div class="task-sub-info">☑ チェックリスト (${doneCount}/${task.checklist.length})</div>`;
+        html += `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:2px;">`;
+        task.checklist.forEach((item, idx) => {
+          html += `
+            <label style="font-size:0.75rem; color:${item.done ? 'var(--text-sub)' : '#fff'}; user-select:none; cursor:pointer; text-decoration:${item.done ? 'line-through' : 'none'}">
+              <input type="checkbox" ${item.done ? 'checked' : ''} onchange="toggleChecklistItem(${task.id}, ${idx})"> ${escapeHtml(item.text)}
+            </label>
+          `;
+        });
+        html += `</div>`;
+      }
+      return html;
+    }
+
+    function renderRegisteredTable() {
+      const tbody = document.getElementById('registeredTableBody');
+      tbody.innerHTML = '';
+      window.registeredTasks.forEach(t => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>
+            <div>${escapeHtml(t.name)}</div>
+            ${generateSubInfoHtml(t)}
+          </td>
+          <td>${t.est}分</td>
+          <td>
+            <button class="btn-add" onclick="startTaskFromList(${t.id})">着手</button>
+            <button class="btn-edit" onclick="openEditModal(${t.id})">詳細/編集</button>
+            <button class="btn-del" onclick="deleteRegistered(${t.id})">削除</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function renderActiveTable() {
+      const tbody = document.getElementById('activeTableBody');
+      tbody.innerHTML = '';
+      window.activeTasks.forEach(t => {
+        const tr = document.createElement('tr');
+        if (t.isRunning) tr.style.backgroundColor = 'var(--active-bg)';
+        const hrs = String(Math.floor(t.elapsedSec / 3600)).padStart(2, '0');
+        const mins = String(Math.floor((t.elapsedSec % 3600) / 60)).padStart(2, '0');
+        const secs = String(t.elapsedSec % 60).padStart(2, '0');
+        tr.innerHTML = `
+          <td>
+            <div>${escapeHtml(t.name)}</div>
+            ${generateSubInfoHtml(t)}
+          </td>
+          <td class="timer-text">${hrs}:${mins}:${secs}</td>
+          <td>
+            <button class="${t.isRunning ? 'btn-stop' : 'btn-start'}" onclick="toggleTimer(${t.id})">
+              ${t.isRunning ? '一時停止' : 'タイマースタート'}
+            </button>
+            <button class="btn-add" onclick="completeTask(${t.id})">完了</button>
+            <button class="btn-edit" onclick="openEditModal(${t.id})">詳細/編集</button>
+            <button class="btn-del" onclick="returnToRegistered(${t.id})">一覧に戻す</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function renderHistoryTable() {
+      const tbody = document.getElementById('historyTableBody');
+      tbody.innerHTML = '';
+      window.completedTasks.forEach(t => {
+        const tr = document.createElement('tr');
+        const startObj = new Date(t.start);
+        const endObj = new Date(t.end);
+        const startStr = startObj.toTimeString().substring(0, 5);
+        const endStr = endObj.toTimeString().substring(0, 5);
+        const durMins = Math.round(t.durationSec / 60);
+        tr.innerHTML = `
+          <td>${escapeHtml(t.name)}</td>
+          <td>${startStr}</td>
+          <td>${endStr}</td>
+          <td>${durMins}分</td>
+          <td>
+            <button class="btn-edit" onclick="restoreFromCompleted(${t.id})" title="未完了リストへ戻す">未配置に戻す ↩</button>
+            <button class="btn-del" onclick="deleteHistory(${t.id})">削除</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function renderTimeline() {
+      const pool = document.getElementById('unassignedPool');
+      pool.innerHTML = '';
+      const unassigned = window.registeredTasks.filter(rt => !window.timelineTasks.some(tt => tt.id === rt.id));
+      if (unassigned.length === 0) {
+        pool.innerHTML = '<span style="color:var(--text-sub); font-size:0.85rem;">未配置の登録タスクはありません</span>';
+      } else {
+        unassigned.forEach(task => {
+          const item = document.createElement('div');
+          item.className = 'pool-item';
+          item.textContent = `＋ ${task.name} (${task.est}分)`;
+          item.onclick = () => window.assignTaskToTimeline(task);
+          pool.appendChild(item);
+        });
+      }
+
+      const grid = document.getElementById('timelineGrid');
+      grid.innerHTML = '';
+      for (let hour = 0; hour < 24; hour++) {
+        const slot = document.createElement('div');
+        slot.className = 'time-slot';
+        const label = document.createElement('div');
+        label.className = 'time-label';
+        label.textContent = `${String(hour).padStart(2, '0')}:00`;
+        const lane = document.createElement('div');
+        lane.className = 'time-lane';
+        slot.appendChild(label);
+        slot.appendChild(lane);
+        grid.appendChild(slot);
+      }
+
+      const container = document.getElementById('timelineTasksContainer');
+      container.innerHTML = '';
+
+      window.timelineTasks.forEach(task => {
+        const el = document.createElement('div');
+        el.className = `draggable-task ${task.isCompleted ? 'completed' : ''}`;
+        el.style.top = `${task.startMin}px`;
+        el.style.height = `${Math.max(30, task.durationMin)}px`;
+        
+        const startH = String(Math.floor(task.startMin / 60)).padStart(2, '0');
+        const startM = String(task.startMin % 60).padStart(2, '0');
+
+        let checkInfo = '';
+        if (task.checklist && task.checklist.length > 0) {
+          const done = task.checklist.filter(c => c.done).length;
+          checkInfo = ` (${done}/${task.checklist.length})`;
+        }
+
+        el.innerHTML = `
+          <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-right:8px;">
+            <span>[${startH}:${startM}] ${escapeHtml(task.name)}${checkInfo} (${task.durationMin}分)</span>
+          </div>
+        `;
+
+        const btnGroup = document.createElement('div');
+        btnGroup.className = 'btn-group-mini';
+
+        const editBtn = document.createElement('button');
+        editBtn.className = 'btn-edit';
+        editBtn.textContent = '✎';
+        editBtn.title = '編集';
+        editBtn.onclick = (e) => { e.stopPropagation(); window.openEditModal(task.id); };
+
+        const unassignBtn = document.createElement('button');
+        unassignBtn.className = 'btn-del';
+        unassignBtn.textContent = '↩';
+        unassignBtn.title = '未配置（上のプール）に戻す';
+        unassignBtn.onclick = (e) => { e.stopPropagation(); window.unassignTimelineTask(task.id); };
+
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'btn-del';
+        removeBtn.textContent = '🗑️';
+        removeBtn.title = '完全に削除';
+        removeBtn.onclick = (e) => { e.stopPropagation(); window.deleteTimelineTask(task.id); };
+
+        btnGroup.appendChild(editBtn);
+        btnGroup.appendChild(unassignBtn);
+        btnGroup.appendChild(removeBtn);
+        el.appendChild(btnGroup);
+
+        makeDraggableOnly(el, task);
+        container.appendChild(el);
+      });
+    }
+
+    function makeDraggableOnly(el, task) {
+      let isDragging = false;
+      let startY = 0;
+      let initialTop = 0;
+
+      const handleStart = (e) => {
+        if (e.target.closest('.btn-group-mini')) return;
+
+        isDragging = true;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        startY = clientY;
+        initialTop = task.startMin;
+
+        window.addEventListener('mousemove', handleMove);
+        window.addEventListener('mouseup', handleEnd);
+        window.addEventListener('touchmove', handleMove, { passive: false });
+        window.addEventListener('touchend', handleEnd);
+      };
+
+      const handleMove = (e) => {
+        if (!isDragging) return;
+        if (e.cancelable) e.preventDefault();
+
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        const deltaY = clientY - startY;
+
+        let newStartMin = Math.round((initialTop + deltaY) / 15) * 15;
+        newStartMin = Math.max(0, Math.min(1440 - task.durationMin, newStartMin));
+        task.startMin = newStartMin;
+        el.style.top = `${newStartMin}px`;
+
+        const startH = String(Math.floor(task.startMin / 60)).padStart(2, '0');
+        const startM = String(task.startMin % 60).padStart(2, '0');
+        const textSpan = el.querySelector('span');
+        if (textSpan) {
+          let checkInfo = '';
+          if (task.checklist && task.checklist.length > 0) {
+            const done = task.checklist.filter(c => c.done).length;
+            checkInfo = ` (${done}/${task.checklist.length})`;
+          }
+          textSpan.textContent = `[${startH}:${startM}] ${task.name}${checkInfo} (${task.durationMin}分)`;
+        }
+      };
+
+      const handleEnd = () => {
+        if (isDragging) {
+          isDragging = false;
+          window.saveData();
+        }
+        window.removeEventListener('mousemove', handleMove);
+        window.removeEventListener('mouseup', handleEnd);
+        window.removeEventListener('touchmove', handleMove);
+        window.removeEventListener('touchend', handleEnd);
+      };
+
+      el.addEventListener('mousedown', handleStart);
+      el.addEventListener('touchstart', handleStart, { passive: false });
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return str.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+    }
+
+    renderAll();
+  </script>
+</body>
+</html>
