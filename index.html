@@ -101,7 +101,7 @@
       gap: 8px;
     }
 
-    input[type="text"], select, textarea {
+    input[type="text"], input[type="date"], input[type="time"], select, textarea {
       background-color: #2c2c2c;
       border: 1px solid var(--border-color);
       color: var(--text-main);
@@ -340,6 +340,9 @@
     
     <div class="card" style="border: 2px solid var(--accent-color);">
       <h2>🔥 実行中タスク（タスク着手中エリア）</h2>
+      <div style="font-size: 0.8rem; color: var(--text-sub); margin-bottom: 8px;">
+        💡 ヒント: 「完了」ボタンは通常クリックで当日完了、**長押し（またはPCで長めクリック）**すると過去の日付を選んで完了できます！
+      </div>
       <div class="active-container">
         <div class="analog-clock-wrapper">
           <canvas id="analogClock" width="100" height="100"></canvas>
@@ -429,6 +432,31 @@
         </thead>
         <tbody id="historyTableBody"></tbody>
       </table>
+    </div>
+  </div>
+
+  <!-- 過去日付での完了選択モーダル -->
+  <div id="completeDateModal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <h2>📅 完了日時の指定（過去分として記録）</h2>
+      <p style="font-size:0.85rem; color:var(--text-sub);">
+        押し忘れていた過去の完了日を選んでください。選択した日付のログとして保存されます。
+      </p>
+      
+      <div>
+        <label style="font-size:0.85rem; color:var(--text-sub);">完了日</label>
+        <input type="date" id="pastCompleteDate" style="width:100%; margin-top:4px;">
+      </div>
+
+      <div>
+        <label style="font-size:0.85rem; color:var(--text-sub);">完了時刻（目安）</label>
+        <input type="time" id="pastCompleteTime" value="23:00" style="width:100%; margin-top:4px;">
+      </div>
+
+      <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:8px;">
+        <button class="btn-del" onclick="closeCompleteDateModal()">キャンセル</button>
+        <button class="btn-add" onclick="confirmPastCompleteTask()">この日時で完了にする</button>
+      </div>
     </div>
   </div>
 
@@ -538,6 +566,7 @@
 
     let currentUser = null;
     let unsubscribeSnapshot = null;
+    let targetTaskIdForPastComplete = null; // 長押し完了用の一時保持変数
 
     window.registeredTasks = JSON.parse(localStorage.getItem('tb_registered')) || [];
     window.activeTasks = JSON.parse(localStorage.getItem('tb_active')) || [];
@@ -606,13 +635,13 @@
       }
     };
 
-    async function archiveCompletedTaskToFirestore(completedTaskItem) {
+    async function archiveCompletedTaskToFirestore(completedTaskItem, targetDateKey = null) {
       if (!currentUser) return;
       try {
-        const todayKey = getTodayKey();
-        const logDocRef = doc(db, "users", currentUser.uid, "daily_logs", todayKey);
+        const dateKey = targetDateKey || getTodayKey();
+        const logDocRef = doc(db, "users", currentUser.uid, "daily_logs", dateKey);
         await setDoc(logDocRef, {
-          date: todayKey,
+          date: dateKey,
           tasks: arrayUnion(completedTaskItem),
           updatedAt: new Date().toISOString()
         }, { merge: true });
@@ -1071,22 +1100,51 @@
       }
     }
 
-    /* --- 完了処理（タイマー時間記録対応） --- */
+    /* --- 通常の完了処理（当日） --- */
     window.completeTask = async function(id) {
+      processComplete(id, null, null);
+    };
+
+    /* --- 長押し完了用のモーダルを開く --- */
+    window.openCompleteDateModal = function(id) {
+      targetTaskIdForPastComplete = id;
+      document.getElementById('pastCompleteDate').value = getTodayKey();
+      document.getElementById('completeDateModal').classList.remove('hidden');
+    };
+
+    window.closeCompleteDateModal = function() {
+      document.getElementById('completeDateModal').classList.add('hidden');
+      targetTaskIdForPastComplete = null;
+    };
+
+    window.confirmPastCompleteTask = function() {
+      if (!targetTaskIdForPastComplete) return;
+      const dateStr = document.getElementById('pastCompleteDate').value;
+      const timeStr = document.getElementById('pastCompleteTime').value || '23:00';
+      if (!dateStr) {
+        alert("日付を選択してください。");
+        return;
+      }
+      const customEnd = new Date(`${dateStr}T${timeStr}:00`);
+      document.getElementById('completeDateModal').classList.add('hidden');
+      processComplete(targetTaskIdForPastComplete, customEnd, dateStr);
+      targetTaskIdForPastComplete = null;
+    };
+
+    /* 共通完了処理ロジック (customEndが指定されれば過去日付、nullなら当日) */
+    async function processComplete(id, customEndDate = null, targetDateKey = null) {
       const idx = window.activeTasks.findIndex(t => t.id === id);
       if (idx === -1) return;
       const task = window.activeTasks.splice(idx, 1)[0];
       task.isRunning = false;
       checkTimerState();
 
-      const endTime = new Date();
-      // タイマーの経過時間(秒)を取得（最低1秒）
-      const totalElapsedSec = Math.max(1, task.elapsedSec || 0);
+      const endTime = customEndDate || new Date();
+      const totalElapsedSec = Math.max(1, task.elapsedSec || (task.est ? task.est * 60 : 1800));
       
-      // 開始時刻は、記録されている開始時間か、現在時刻から経過時間分さかのぼった時刻
-      const startTime = task.actualStart 
-        ? new Date(task.actualStart) 
-        : new Date(endTime.getTime() - totalElapsedSec * 1000);
+      const startTime = customEndDate 
+        ? new Date(endTime.getTime() - totalElapsedSec * 1000)
+        : (task.actualStart ? new Date(task.actualStart) : new Date(endTime.getTime() - totalElapsedSec * 1000));
 
       const durationMins = Math.max(1, Math.round(totalElapsedSec / 60));
       const startMinutes = startTime.getHours() * 60 + startTime.getMinutes();
@@ -1121,12 +1179,15 @@
       }
 
       window.saveData();
-      await archiveCompletedTaskToFirestore(completedItem);
+      
+      // 保存先のキー（過去日付を指定された場合はその日付、なければ当日）
+      const actualDateKey = targetDateKey || getTodayKey();
+      await archiveCompletedTaskToFirestore(completedItem, actualDateKey);
 
       renderActiveTable();
       renderHistoryTable();
       drawAnalogClock();
-    };
+    }
 
     window.restoreFromCompleted = function(id) {
       const idx = window.completedTasks.findIndex(t => t.id === id);
@@ -1282,21 +1343,80 @@
         const hrs = String(Math.floor(t.elapsedSec / 3600)).padStart(2, '0');
         const mins = String(Math.floor((t.elapsedSec % 3600) / 60)).padStart(2, '0');
         const secs = String(t.elapsedSec % 60).padStart(2, '0');
-        tr.innerHTML = `
-          <td>
-            <div>${escapeHtml(t.name)}</div>
-            ${generateSubInfoHtml(t)}
-          </td>
-          <td class="timer-text">${hrs}:${mins}:${secs}</td>
-          <td>
-            <button class="${t.isRunning ? 'btn-stop' : 'btn-start'}" onclick="toggleTimer(${t.id})">
-              ${t.isRunning ? '一時停止' : 'タイマースタート'}
-            </button>
-            <button class="btn-add" onclick="completeTask(${t.id})">完了</button>
-            <button class="btn-edit" onclick="openEditModal(${t.id})">詳細/編集</button>
-            <button class="btn-del" onclick="returnToRegistered(${t.id})">一覧に戻す</button>
-          </td>
+        
+        const td = document.createElement('td');
+        td.innerHTML = `
+          <div>${escapeHtml(t.name)}</div>
+          ${generateSubInfoHtml(t)}
         `;
+        tr.appendChild(td);
+
+        const tdTimer = document.createElement('td');
+        tdTimer.className = 'timer-text';
+        tdTimer.textContent = `${hrs}:${mins}:${secs}`;
+        tr.appendChild(tdTimer);
+
+        const tdBtns = document.createElement('td');
+        
+        const toggleBtn = document.createElement('button');
+        toggleBtn.className = t.isRunning ? 'btn-stop' : 'btn-start';
+        toggleBtn.textContent = t.isRunning ? '一時停止' : 'タイマースタート';
+        toggleBtn.onclick = () => toggleTimer(t.id);
+        tdBtns.appendChild(toggleBtn);
+
+        // 完了ボタン（クリック＝当日完了、長押し＝過去日付選択モーダル）
+        const completeBtn = document.createElement('button');
+        completeBtn.className = 'btn-add';
+        completeBtn.textContent = '完了';
+        completeBtn.style.marginLeft = '4px';
+        
+        // 通常クリック（短押し完了）
+        completeBtn.onclick = () => {
+          if (!isLongPressed) completeTask(t.id);
+        };
+
+        // 長押し検知用の変数
+        let pressTimer = null;
+        let isLongPressed = false;
+
+        const startPress = (e) => {
+          isLongPressed = false;
+          pressTimer = setTimeout(() => {
+            isLongPressed = true;
+            openCompleteDateModal(t.id);
+          }, 700); // 0.7秒長押しで発動
+        };
+
+        const cancelPress = () => {
+          if (pressTimer) {
+            clearTimeout(pressTimer);
+            pressTimer = null;
+          }
+        };
+
+        completeBtn.addEventListener('mousedown', startPress);
+        completeBtn.addEventListener('mouseup', cancelPress);
+        completeBtn.addEventListener('mouseleave', cancelPress);
+        completeBtn.addEventListener('touchstart', startPress, { passive: true });
+        completeBtn.addEventListener('touchend', cancelPress);
+
+        tdBtns.appendChild(completeBtn);
+
+        const editBtn = document.createElement('button');
+        editBtn.className = 'btn-edit';
+        editBtn.textContent = '詳細/編集';
+        editBtn.style.marginLeft = '4px';
+        editBtn.onclick = () => openEditModal(t.id);
+        tdBtns.appendChild(editBtn);
+
+        const returnBtn = document.createElement('button');
+        returnBtn.className = 'btn-del';
+        returnBtn.textContent = '一覧に戻す';
+        returnBtn.style.marginLeft = '4px';
+        returnBtn.onclick = () => returnToRegistered(t.id);
+        tdBtns.appendChild(returnBtn);
+
+        tr.appendChild(tdBtns);
         tbody.appendChild(tr);
       });
     }
