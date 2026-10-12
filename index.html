@@ -112,7 +112,6 @@
       user-select: text;
     }
 
-    /* スマホ・タブレットでカレンダー・時刻入力を押しやすく見やすく調整 */
     input[type="date"], input[type="time"] {
       width: 100%;
       padding: 12px;
@@ -306,7 +305,7 @@
       background-color: var(--card-bg);
       border: 1px solid var(--border-color);
       border-radius: 10px;
-      width: 90%; max-width: 480px;
+      width: 90%; max-width: 520px;
       max-height: 85vh; overflow-y: auto;
       padding: 18px; display: flex; flex-direction: column; gap: 14px;
     }
@@ -326,7 +325,7 @@
       white-space: pre-wrap;
       word-break: break-all;
       font-size: 0.9rem;
-      max-height: 300px;
+      max-height: 250px;
       overflow-y: auto;
     }
   </style>
@@ -427,7 +426,7 @@
     <div class="card">
       <h2>✅ 本日の完了エリア ＆ 過去ログ</h2>
       <div style="margin-bottom: 12px; display:flex; flex-wrap:wrap; gap:8px;">
-        <button class="btn-add" onclick="openHistoryModal()">📅 保存された全記録ログを見る</button>
+        <button class="btn-add" onclick="openHistoryModal()">📅 過去ログを見る・直接編集</button>
         <button class="btn-del" onclick="clearCompletedScreenOnly()">🧹 画面のリストを消去（クラウドログは残ります）</button>
         <button class="btn-edit" onclick="downloadCompletedTasks()">📄 テキスト出力(文字化け対策済)</button>
       </div>
@@ -446,7 +445,7 @@
     </div>
   </div>
 
-  <!-- 過去日付選択モーダル（ネイティブカレンダー対応） -->
+  <!-- 過去日付選択モーダル -->
   <div id="completeDateModal" class="modal-overlay hidden">
     <div class="modal-card">
       <h2>📅 完了日時の指定</h2>
@@ -467,6 +466,56 @@
       <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:8px;">
         <button class="btn-del" onclick="closeCompleteDateModal()">キャンセル</button>
         <button class="btn-add" onclick="confirmPastCompleteTask()">この日時で完了にする</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 過去ログ直接編集・削除モーダル -->
+  <div id="historyModal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <h2>📅 永久保存版・日々の活動記録（編集・削除）</h2>
+      
+      <div>
+        <label style="font-size:0.85rem; color:var(--text-sub);">編集・閲覧したい日付を選択:</label>
+        <select id="historyDateSelect" style="width:100%; margin-top:4px;" onchange="loadHistoryLogByDate(this.value)">
+          <option value="">日付を選択してください</option>
+        </select>
+      </div>
+
+      <div>
+        <label style="font-size:0.85rem; color:var(--text-sub); display:block; margin-bottom:4px;">その日の完了タスク一覧（個別に削除・編集できます）:</label>
+        <div id="historyEditListContainer" style="display:flex; flex-direction:column; gap:6px; max-height:250px; overflow-y:auto; background:#111; padding:8px; border-radius:6px;">
+          <span style="font-size:0.85rem; color:var(--text-sub);">日付を選択してください</span>
+        </div>
+      </div>
+
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
+        <button class="btn-edit" onclick="copyHistoryLogFromModal()">📋 ログ全体をコピー</button>
+        <button class="btn-del" onclick="closeHistoryModal()">閉じる</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ログ内個別タスク編集モーダル -->
+  <div id="editLogTaskModal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <h2>✏️ 過去ログのタスクを編集</h2>
+      <input type="hidden" id="editLogDateKey">
+      <input type="hidden" id="editLogTaskIndex">
+
+      <div>
+        <label style="font-size:0.85rem; color:var(--text-sub);">タスク名</label>
+        <input type="text" id="editLogTaskName" style="width:100%;">
+      </div>
+
+      <div>
+        <label style="font-size:0.85rem; color:var(--text-sub);">実績時間（分）</label>
+        <input type="text" id="editLogTaskDuration" style="width:100%;">
+      </div>
+
+      <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:8px;">
+        <button class="btn-del" onclick="closeEditLogTaskModal()">キャンセル</button>
+        <button class="btn-add" onclick="saveEditedLogTask()">保存する</button>
       </div>
     </div>
   </div>
@@ -531,33 +580,10 @@
     </div>
   </div>
 
-  <div id="historyModal" class="modal-overlay hidden">
-    <div class="modal-card">
-      <h2>📅 永久保存版・日々の活動記録</h2>
-      
-      <div>
-        <label style="font-size:0.85rem; color:var(--text-sub);">閲覧したい日付を選択:</label>
-        <select id="historyDateSelect" style="width:100%; margin-top:4px;" onchange="loadHistoryLogByDate(this.value)">
-          <option value="">日付を選択してください</option>
-        </select>
-      </div>
-
-      <div>
-        <label style="font-size:0.85rem; color:var(--text-sub);">記録ログ（テキスト）:</label>
-        <div id="historyLogDisplay" class="history-log-text">日付を選択するとここにログが表示されます</div>
-      </div>
-
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
-        <button class="btn-edit" onclick="copyHistoryLog()">📋 ログをコピー</button>
-        <button class="btn-del" onclick="closeHistoryModal()">閉じる</button>
-      </div>
-    </div>
-  </div>
-
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
     import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-    import { getFirestore, doc, setDoc, getDoc, collection, getDocs, onSnapshot, arrayUnion } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+    import { getFirestore, doc, setDoc, getDoc, collection, getDocs, onSnapshot, arrayUnion, updateDoc, arrayRemove } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyBeBKeUH6NCRux5djZh5-E5GG4AV2yzZVM",
@@ -658,6 +684,20 @@
         }, { merge: true });
       } catch (e) {
         console.error("永久アーカイブ保存エラー:", e);
+      }
+    }
+
+    async function removeCompletedTaskFromFirestore(completedTaskItem) {
+      if (!currentUser) return;
+      try {
+        const dateKey = completedTaskItem.end ? completedTaskItem.end.substring(0, 10) : getTodayKey();
+        const logDocRef = doc(db, "users", currentUser.uid, "daily_logs", dateKey);
+        await updateDoc(logDocRef, {
+          tasks: arrayRemove(completedTaskItem),
+          updatedAt: new Date().toISOString()
+        });
+      } catch (e) {
+        console.error("アーカイブ削除エラー:", e);
       }
     }
 
@@ -878,14 +918,15 @@
       document.getElementById('historyModal').classList.add('hidden');
     };
 
+    /* 過去ログを読み込み、モーダル内に直接編集・削除ボタン付きで表示 */
     window.loadHistoryLogByDate = async function(dateStr) {
-      const display = document.getElementById('historyLogDisplay');
+      const container = document.getElementById('historyEditListContainer');
       if (!dateStr) {
-        display.textContent = '日付を選択してください。';
+        container.innerHTML = '<span style="font-size:0.85rem; color:var(--text-sub);">日付を選択してください。</span>';
         return;
       }
 
-      display.textContent = '読み込み中...';
+      container.innerHTML = '<span style="font-size:0.85rem; color:var(--text-sub);">読み込み中...</span>';
       let tasks = [];
 
       if (currentUser) {
@@ -904,24 +945,150 @@
       }
 
       if (tasks.length === 0) {
-        display.textContent = `【${dateStr}】\n保存された完了タスク記録はありません。`;
+        container.innerHTML = `<span style="font-size:0.85rem; color:var(--text-sub);">【${dateStr}】保存された完了タスクはありません。</span>`;
         return;
+      }
+
+      container.innerHTML = '';
+      tasks.forEach((t, idx) => {
+        const startObj = new Date(t.start);
+        const endObj = new Date(t.end);
+        const startStr = isNaN(startObj) ? '--:--' : startObj.toTimeString().substring(0, 5);
+        const endStr = isNaN(endObj) ? '--:--' : endObj.toTimeString().substring(0, 5);
+        const durMins = Math.round((t.durationSec || 60) / 60);
+
+        const div = document.createElement('div');
+        div.style.cssText = 'display:flex; justify-content:space-between; align-items:center; background:#1e1e1e; padding:8px; border-radius:4px; border:1px solid var(--border-color);';
+        
+        div.innerHTML = `
+          <div style="font-size:0.85rem;">
+            <span style="color:var(--accent-color);">[${startStr}-${endStr}]</span> <strong>${escapeHtml(t.name)}</strong> (${durMins}分)
+          </div>
+          <div style="display:flex; gap:4px;">
+            <button class="btn-edit" style="padding:2px 6px; font-size:0.75rem;" onclick="openEditLogTaskModal('${dateStr}', ${idx})">編集</button>
+            <button class="btn-del" style="padding:2px 6px; font-size:0.75rem;" onclick="deleteLogTask('${dateStr}', ${idx})">削除</button>
+          </div>
+        `;
+        container.appendChild(div);
+      });
+    };
+
+    /* 過去ログ内の特定タスクの編集モーダルを開く */
+    window.openEditLogTaskModal = async function(dateStr, taskIndex) {
+      let tasks = [];
+      if (currentUser) {
+        const docSnap = await getDoc(doc(db, "users", currentUser.uid, "daily_logs", dateStr));
+        if (docSnap.exists()) tasks = docSnap.data().tasks || [];
+      } else if (dateStr === getTodayKey()) {
+        tasks = window.completedTasks;
+      }
+
+      const task = tasks[taskIndex];
+      if (!task) return;
+
+      document.getElementById('editLogDateKey').value = dateStr;
+      document.getElementById('editLogTaskIndex').value = taskIndex;
+      document.getElementById('editLogTaskName').value = task.name || '';
+      document.getElementById('editLogTaskDuration').value = Math.round((task.durationSec || 60) / 60);
+      document.getElementById('editLogTaskModal').classList.remove('hidden');
+    };
+
+    window.closeEditLogTaskModal = function() {
+      document.getElementById('editLogTaskModal').classList.add('hidden');
+    };
+
+    /* 編集した過去ログタスクを保存する */
+    window.saveEditedLogTask = async function() {
+      const dateStr = document.getElementById('editLogDateKey').value;
+      const taskIndex = parseInt(document.getElementById('editLogTaskIndex').value, 10);
+      const newName = document.getElementById('editLogTaskName').value.trim();
+      const newDurMins = parseInt(document.getElementById('editLogTaskDuration').value, 10) || 15;
+
+      if (!newName) {
+        alert("タスク名を入力してください。");
+        return;
+      }
+
+      if (currentUser) {
+        try {
+          const logDocRef = doc(db, "users", currentUser.uid, "daily_logs", dateStr);
+          const docSnap = await getDoc(logDocRef);
+          if (docSnap.exists()) {
+            let tasks = docSnap.data().tasks || [];
+            if (tasks[taskIndex]) {
+              tasks[taskIndex].name = newName;
+              tasks[taskIndex].durationSec = newDurMins * 60;
+              await setDoc(logDocRef, { tasks: tasks }, { merge: true });
+            }
+          }
+        } catch (e) {
+          console.error("ログ編集エラー:", e);
+        }
+      }
+
+      // 本日の場合は completedTasks も同期更新
+      if (dateStr === getTodayKey() && window.completedTasks[taskIndex]) {
+        window.completedTasks[taskIndex].name = newName;
+        window.completedTasks[taskIndex].durationSec = newDurMins * 60;
+        window.saveData();
+        renderHistoryTable();
+      }
+
+      closeEditLogTaskModal();
+      loadHistoryLogByDate(dateStr);
+      alert("ログを更新しました！");
+    };
+
+    /* 過去ログ内の特定タスクを削除する */
+    window.deleteLogTask = async function(dateStr, taskIndex) {
+      if (!confirm("このログを完全に削除してもよろしいですか？")) return;
+
+      if (currentUser) {
+        try {
+          const logDocRef = doc(db, "users", currentUser.uid, "daily_logs", dateStr);
+          const docSnap = await getDoc(logDocRef);
+          if (docSnap.exists()) {
+            let tasks = docSnap.data().tasks || [];
+            if (tasks[taskIndex]) {
+              tasks.splice(taskIndex, 1);
+              await setDoc(logDocRef, { tasks: tasks }, { merge: true });
+            }
+          }
+        } catch (e) {
+          console.error("ログ削除エラー:", e);
+        }
+      }
+
+      if (dateStr === getTodayKey() && window.completedTasks[taskIndex]) {
+        window.completedTasks.splice(taskIndex, 1);
+        window.saveData();
+        renderHistoryTable();
+      }
+
+      loadHistoryLogByDate(dateStr);
+    };
+
+    window.copyHistoryLogFromModal = async function() {
+      const dateStr = document.getElementById('historyDateSelect').value;
+      if (!dateStr) return;
+      let tasks = [];
+      if (currentUser) {
+        const docSnap = await getDoc(doc(db, "users", currentUser.uid, "daily_logs", dateStr));
+        if (docSnap.exists()) tasks = docSnap.data().tasks || [];
+      } else if (dateStr === getTodayKey()) {
+        tasks = window.completedTasks;
       }
 
       const lines = tasks.map(t => {
         const startObj = new Date(t.start);
         const endObj = new Date(t.end);
-        const startStr = startObj.toTimeString().substring(0, 5);
-        const endStr = endObj.toTimeString().substring(0, 5);
-        const durMins = Math.round(t.durationSec / 60);
+        const startStr = isNaN(startObj) ? '--:--' : startObj.toTimeString().substring(0, 5);
+        const endStr = isNaN(endObj) ? '--:--' : endObj.toTimeString().substring(0, 5);
+        const durMins = Math.round((t.durationSec || 60) / 60);
         return `[${startStr} - ${endStr}] ${t.name} (${durMins}分)`;
       });
 
-      display.textContent = `--- ${dateStr} 完了タスク記録 ---\n` + lines.join('\n');
-    };
-
-    window.copyHistoryLog = function() {
-      const text = document.getElementById('historyLogDisplay').textContent;
+      const text = `--- ${dateStr} 完了タスク記録 ---\n` + lines.join('\n');
       navigator.clipboard.writeText(text).then(() => {
         alert("ログをクリップボードにコピーしました！");
       }).catch(err => {
@@ -1196,10 +1363,12 @@
       drawAnalogClock();
     }
 
-    window.restoreFromCompleted = function(id) {
+    window.restoreFromCompleted = async function(id) {
       const idx = window.completedTasks.findIndex(t => t.id === id);
       if (idx === -1) return;
       const task = window.completedTasks.splice(idx, 1)[0];
+
+      await removeCompletedTaskFromFirestore(task);
 
       const tlTask = window.timelineTasks.find(t => t.id === id);
       if (tlTask) {
@@ -1222,7 +1391,11 @@
       }
     };
 
-    window.deleteHistory = function(id) {
+    window.deleteHistory = async function(id) {
+      const task = window.completedTasks.find(t => t.id === id);
+      if (task) {
+        await removeCompletedTaskFromFirestore(task);
+      }
       window.completedTasks = window.completedTasks.filter(t => t.id !== id);
       window.timelineTasks = window.timelineTasks.filter(t => t.id !== id);
       window.saveData();
@@ -1432,9 +1605,9 @@
         const tr = document.createElement('tr');
         const startObj = new Date(t.start);
         const endObj = new Date(t.end);
-        const startStr = startObj.toTimeString().substring(0, 5);
-        const endStr = endObj.toTimeString().substring(0, 5);
-        const durMins = Math.round(t.durationSec / 60);
+        const startStr = isNaN(startObj) ? '--:--' : startObj.toTimeString().substring(0, 5);
+        const endStr = isNaN(endObj) ? '--:--' : endObj.toTimeString().substring(0, 5);
+        const durMins = Math.round((t.durationSec || 60) / 60);
         tr.innerHTML = `
           <td>${escapeHtml(t.name)}</td>
           <td>${startStr}</td>
